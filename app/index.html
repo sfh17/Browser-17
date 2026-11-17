@@ -1181,6 +1181,21 @@ function buildRates(side) {
     notice(`Sample rate: ${name}`);
   } })));
 }
+// ---------------- About Browser-17 (in Preferences) ----------------
+const GITHUB = "https://github.com/sfh17/Browser-17";
+function buildAbout(side) {
+  const ab = INIT.about || {};
+  side.replaceChildren(
+    head(`Browser-17${ab.version ? "  " + ab.version : ""}`),
+    head("made by sfh17"),
+    hr(),
+    head(`Engine: Electron ${ab.electron || "?"} (Chromium ${(ab.chrome || "?").split(".")[0]})`),
+    head("Open source, GPL-3.0"),
+    hr(),
+    item("Browser-17 on GitHub", { icon: "forward", act: () => { newTab(GITHUB); } }),
+    item("Report a bug or an idea", { icon: "forward", act: () => { newTab(GITHUB + "/issues"); } }),
+  );
+}
 // ---------------- Shield 17 (in Preferences) ----------------
 let shield = null;   // the last state from the main process
 const SH = window.p17 && window.p17.sh;
@@ -1270,6 +1285,8 @@ function buildPrefs(island) {
   );
   if (INIT.standalone) {   // on its own the browser has its own Color and background
     rows.push(hr(), item("Color and background", { icon: "edit", act: () => P.send({ ev: "colors-open" }) }));
+    const ab = INIT.about || {};
+    rows.push(hr(), subItem("About Browser-17", ab.version ? "v" + ab.version : "", buildAbout));
   }
   island.replaceChildren(...rows);
 }

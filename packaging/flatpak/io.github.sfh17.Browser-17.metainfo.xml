@@ -34,6 +34,11 @@
   <update_contact>sfh17arm@gmail.com</update_contact>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.5" date="2026-11-17">
+      <description>
+        <p>Preferences → About Browser-17: the version, the engine and the author.</p>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-11-17">
       <description>
         <p>No more "python3" in System Monitor: the sound host and the browser's small helper jobs are named Browser-17.</p>

@@ -130,6 +130,10 @@ function init() {
     links_new_tab: s.links_new_tab, site_theme: s.site_theme,
     download_dir: s.download_dir,
     sample_rate: sampleRate(),
+    about: {   // Preferences → About Browser-17
+      version: (() => { try { return require("./package.json").version; } catch (e) { return ""; } })(),
+      electron: process.versions.electron, chrome: process.versions.chrome,
+    },
   };
 }
 
