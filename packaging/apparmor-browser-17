@@ -1,0 +1,10 @@
+# Browser-17: Ubuntu 24.04+ allows Chromium's sandbox (user namespaces) only to programs that
+# have a profile. The engine in the package uses its setuid sandbox; the engines the browser
+# downloads by itself into the home folder need this.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile browser-17-engine /{home/*,root}/.local/share/browser-17/engines/*/electron flags=(unconfined) {
+  userns,
+  include if exists <local/browser-17-engine>
+}

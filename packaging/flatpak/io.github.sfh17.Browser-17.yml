@@ -1,0 +1,104 @@
+# Flatpak manifest for Browser-17.
+# Build and install locally (from any folder outside the browser's own):
+#   flatpak-builder --user --install --force-clean --install-deps-from=flathub build io.github.sfh17.Browser-17.yml
+# Run:
+#   flatpak run io.github.sfh17.Browser-17
+app-id: io.github.sfh17.Browser-17
+# GNOME: GTK 4, libadwaita and GStreamer for the sound host, and everything Electron needs
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: browser-17
+separate-locales: false
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio          # the sound chain (also works on PipeWire)
+  - --device=dri                 # graphics card drawing, video
+  # The whole home folder, as the regular install has it: downloads, VST3 anywhere, and the
+  # settings shared with the .deb (see the launcher).
+  - --filesystem=home
+  - --filesystem=host-os:ro      # system VST3 in /usr/lib/vst3 (seen at /run/host/usr)
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.secrets          # Notebook 17: its key lives in the system keyring
+  - --talk-name=io.github.sfh17.Player-17         # the "go to the player" arrow starts Player-17
+  - --own-name=org.mpris.MediaPlayer2.chromium.*   # play / pause of sites from the headset and the panel
+  - --talk-name=org.freedesktop.FileManager1       # "Show in folder" for downloads
+  - --system-talk-name=org.freedesktop.login1     # the sound comes back after the computer wakes up
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/doc
+  - '*.a'
+  - '*.la'
+
+modules:
+  # numpy, mutagen, pedalboard (VST3): ready wheels, see Player-17's make-python-modules.py
+  - python3-requirements.json
+
+  # --- zypak: Chromium's sandbox inside Flatpak ---
+  - name: zypak
+    buildsystem: simple
+    build-commands:
+      - sed -i 's/-Werror//' Makefile
+      - make SHELL=/bin/bash
+      - make SHELL=/bin/bash install FLATPAK_DEST=/app
+    sources:
+      - type: git
+        url: https://github.com/refi64/zypak.git
+        tag: v2025.09
+        commit: 693a71c5ffa80ec9c9ce2ae03b1ccc493c698e53
+
+  # --- Electron: the engine, inside the package (it updates with the package) ---
+  - name: electron
+    buildsystem: simple
+    build-commands:
+      - unzip -q electron.zip -d /app/electron
+      - rm -f /app/electron/chrome-sandbox   # zypak takes its place
+    sources:
+      - type: file
+        only-arches: [x86_64]
+        url: https://github.com/electron/electron/releases/download/v45.2.3/electron-v45.2.3-linux-x64.zip
+        sha256: a87fe741f6d121285117e574da6c9a2e65210d410123bbc04713b099add0263b
+        dest-filename: electron.zip
+      - type: file
+        only-arches: [aarch64]
+        url: https://github.com/electron/electron/releases/download/v45.2.3/electron-v45.2.3-linux-arm64.zip
+        sha256: 397c060fd9da99ab72b78787d65545b432fcadf13ef6c96658e4f525692aae0f
+        dest-filename: electron.zip
+
+  # --- gst-python: lets GStreamer use the player's own effects written in Python (Plugins 17:
+  #     Prism EQ, saturator, OTT, limiter, Crunch). The GNOME runtime does not have it: without it
+  #     those effects were silently left out of the sound. ---
+  - name: gst-python
+    buildsystem: meson
+    config-opts:
+      - -Dpygi-overrides-dir=/app/lib/python3.13/site-packages/gi/overrides
+      - -Dplugin=disabled
+      - -Dtests=disabled
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-python/gst-python-1.26.11.tar.xz
+        sha256: 11316ba769b56d26d8b1464c7198a9924caeae48134f7db59171faf1a73dc436
+
+  # --- the browser ---
+  - name: browser-17
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/browser-17/sound
+      - cp -r app /app/lib/browser-17/app
+      - install -m644 sound/browser17host.py sound/player17core.py /app/lib/browser-17/sound/
+      - python3 packaging/flatpak/build-p17dsp.py sound/player17core.py /app/lib/browser-17/sound/libp17dsp.so
+      - chmod -R u=rwX,go=rX /app/lib/browser-17
+      - install -Dm755 packaging/flatpak/browser-17-flatpak.sh /app/bin/browser-17
+      - install -Dm644 io.github.sfh17.Browser-17.desktop /app/share/applications/io.github.sfh17.Browser-17.desktop
+      - install -Dm644 packaging/flatpak/io.github.sfh17.Browser-17.metainfo.xml /app/share/metainfo/io.github.sfh17.Browser-17.metainfo.xml
+      - install -Dm644 packaging/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sfh17.Browser-17.svg
+    sources:
+      - type: dir
+        path: ../..
+        skip: [dist, .build, build, .flatpak-builder, repo]

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 sfh17 -->
+<component type="desktop-application">
+  <id>io.github.sfh17.Browser-17</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Browser-17</name>
+  <summary>A web browser with its own sound chain</summary>
+  <summary xml:lang="ru">Браузер со своей звуковой цепочкой</summary>
+
+  <developer id="io.github.sfh17">
+    <name>sfh17</name>
+  </developer>
+
+  <description>
+    <p>Browser-17 is the browser of Player-17 on its own. Everything a site plays goes through its own effects: Prism EQ, saturator, OTT and limiter, plus your VST3 plugins.</p>
+    <p xml:lang="ru">Browser-17 — браузер из Player-17 как отдельное приложение. Весь звук сайтов идёт через его эффекты: Prism EQ, сатуратор, OTT и лимитер, а также ваши плагины VST3.</p>
+    <ul>
+      <li>Tabs, pinned tabs, a start page with your sites</li>
+      <li xml:lang="ru">Вкладки, закреплённые вкладки, стартовая страница с вашими сайтами</li>
+      <li>Plugins 17 and VST3 effects on the sound of every site</li>
+      <li xml:lang="ru">Plugins 17 и эффекты VST3 на звуке любого сайта</li>
+      <li>Your own colors and a see-through background</li>
+      <li xml:lang="ru">Свои цвета и прозрачный фон</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.sfh17.Browser-17.desktop</launchable>
+  <provides>
+    <binary>browser-17</binary>
+  </provides>
+  <url type="homepage">https://github.com/sfh17/Player-17</url>
+  <update_contact>sfh17arm@gmail.com</update_contact>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.4" date="2026-11-17">
+      <description>
+        <p>No more "python3" in System Monitor: the sound host and the browser's small helper jobs are named Browser-17.</p>
+      </description>
+    </release>
+    <release version="0.1.3" date="2026-11-17">
+      <description>
+        <p>Browser-17 and its sound host show up in System Monitor by name, with the Browser-17 icon.</p>
+      </description>
+    </release>
+    <release version="0.1.1" date="2026-11-15">
+      <description>
+        <p>Security: sites ask before using the camera, microphone or location; extensions install only from the Chrome Web Store page; downloaded programs are never started from the browser.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-11-09"/>
+  </releases>
+</component>

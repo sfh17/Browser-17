@@ -1,0 +1,9 @@
+{
+ "name": "browser-17",
+ "productName": "Browser-17",
+ "version": "0.1.4",
+ "description": "Browser-17: the Player-17 browser on its own, with its own sound chain",
+ "main": "main.js",
+ "author": "sfh17",
+ "desktopName": "io.github.sfh17.Browser-17.desktop"
+}

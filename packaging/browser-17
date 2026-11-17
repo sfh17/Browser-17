@@ -1,0 +1,38 @@
+#!/bin/sh
+# Browser-17 launcher (/usr/bin/browser-17).
+# Starts the newest browser engine (Electron) that is known to work:
+#  - the engine in the package (/usr/lib/browser-17/electron), or
+#  - a newer one the browser downloaded itself (~/.local/share/browser-17/engines/vX.Y.Z).
+# A downloaded engine is tried once; if its window never came up (no ".ok" mark), it is
+# marked bad and the packaged engine is used again.
+LIB=/usr/lib/browser-17
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+ENG="$DATA/browser-17/engines"
+ELECTRON="$LIB/electron/electron"
+BUNDLED="$(cat "$LIB/electron/version" 2>/dev/null)"
+
+if [ -r "$ENG/current" ]; then
+  V="$(cat "$ENG/current")"
+  D="$ENG/$V"
+  NEWER="$(printf '%s\n%s\n' "${BUNDLED#v}" "${V#v}" | sort -V | tail -n1)"
+  if [ -x "$D/electron" ] && [ ! -e "$D/.bad" ] && [ "$NEWER" = "${V#v}" ] && [ "${V#v}" != "${BUNDLED#v}" ]; then
+    if [ -e "$D/.ok" ]; then
+      ELECTRON="$D/electron"
+    elif [ ! -e "$D/.tried" ]; then
+      touch "$D/.tried"
+      ELECTRON="$D/electron"
+    else
+      touch "$D/.bad"   # tried before and never worked: back to the packaged engine
+    fi
+  fi
+fi
+
+unset PLAYER_BROWSER_INIT   # Browser-17 on its own (not the browser inside Player-17)
+# "Browser-17" (not "electron") in System Monitor, with the browser's icon: Linux names a process
+# after the file it started, so the engine is started through a link called Browser-17, kept in
+# the user's own runtime folder (private to him). If the link can't be made, plain electron it is.
+RUN="${XDG_RUNTIME_DIR:-$HOME/.cache}/browser-17"
+if mkdir -p "$RUN" 2>/dev/null && chmod 700 "$RUN" 2>/dev/null && ln -sfn "$ELECTRON" "$RUN/Browser-17" 2>/dev/null && [ -x "$RUN/Browser-17" ]; then
+  ELECTRON="$RUN/Browser-17"
+fi
+exec "$ELECTRON" --class=io.github.sfh17.Browser-17 "$LIB/app" "$@"

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Browser-17 (temporary icon): black squircle, blue globe ring, pink sound wave -->
+  <defs>
+    <filter id="g" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <path d="M128 8C40 8 8 40 8 128s32 120 120 120 120-32 120-120S216 8 128 8z" fill="#000"/>
+  <g fill="none" stroke-linecap="round">
+    <circle cx="128" cy="128" r="74" stroke="#0a84ff" stroke-width="10" filter="url(#g)" opacity=".7"/>
+    <circle cx="128" cy="128" r="74" stroke="#0a84ff" stroke-width="10"/>
+    <ellipse cx="128" cy="128" rx="34" ry="74" stroke="#0a84ff" stroke-width="7"/>
+    <path d="M58 104h140M58 152h140" stroke="#0a84ff" stroke-width="7"/>
+    <path d="M44 134c14 0 14-30 28-30s14 52 28 52 14-70 28-70 14 88 28 88 14-52 28-52 14 18 28 18" stroke="#ff0080" stroke-width="9" filter="url(#g)" opacity=".8"/>
+    <path d="M44 134c14 0 14-30 28-30s14 52 28 52 14-70 28-70 14 88 28 88 14-52 28-52 14 18 28 18" stroke="#ff0080" stroke-width="8"/>
+  </g>
+</svg>

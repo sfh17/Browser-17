@@ -1,0 +1,2208 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- the browser's own look is never repainted by Dark 17 (Chromium's automatic dark mode is for sites) -->
+<meta name="color-scheme" content="only light">
+<title>Player-17 Browser</title>
+<style>
+:root { --bg: #000000; --text: #0a84ff; --title: #ffffff; --lines: #ff0080; --frame: #ff0080;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); --t: 210ms; }
+/* Electron's corner smoothing: rounded corners flow into the straight edges (like Blender's
+   Bevel or Apple's squircles) instead of a plain quarter circle. */
+* { box-sizing: border-box; -electron-corner-smoothing: 70%; }
+/* Edges as smooth as possible without making a line thicker: the line icons and text are drawn
+   with full-quality antialiasing (no rounding of their points to whole pixels). */
+html { text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; }
+svg, svg * { shape-rendering: geometricPrecision; }
+/* Corners that sit inside one another follow one another: inner radius = outer radius minus the
+   gap between them (an island 14px with 6px inside -> its rows 8px). The page area sits in the
+   window's own corner, which the system draws as a plain circle: there the radius is the
+   window's minus the 6px margin, and no smoothing, so both curves run side by side. */
+:root { --win-r: 15px; --gap: 6px; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font-family: Cantarell, "Noto Sans", sans-serif; font-size: 14px; user-select: none; }
+#root { display: flex; flex-direction: column; height: 100%; position: relative; }
+
+/* the header: drag it to move the window (double click: maximize) */
+header { display: flex; align-items: center; gap: 4px; padding: 8px 10px; -webkit-app-region: drag; }
+header button, header input { -webkit-app-region: no-drag; }
+.space { flex: 1; min-width: 10px; }
+/* the pink dot as far from the left edge as from the top (16.5 px), like in the player */
+#dots { display: flex; gap: 4px; margin-right: 10px; margin-left: 4.5px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; border: 0; padding: 0; margin: 0 2px; cursor: pointer;
+  display: grid; place-items: center; }
+.dot svg { width: 10px; height: 10px; fill: none; stroke: rgba(0, 0, 0, 0.65); stroke-width: 2.6;
+  stroke-linecap: round; opacity: 0; transition: opacity 150ms; }
+#dots:hover .dot svg { opacity: 1; }
+.btn { background: transparent; border: 0; border-radius: 9px; padding: 5px; color: var(--text); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; }
+.btn:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
+.btn:active { background: color-mix(in srgb, var(--text) 22%, transparent); }
+.btn:hover svg { stroke: var(--lines); }
+.btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.btn:disabled svg { stroke: var(--text); }
+.btn svg { width: 18px; height: 18px; fill: none; stroke: var(--text); stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; transition: stroke 120ms; }
+#address { flex: 6; max-width: 760px; min-width: 120px; background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text); border: 1px solid var(--lines); border-bottom-width: 2px; border-radius: 0;
+  padding: 6px 10px; font: inherit; outline: none; user-select: text; }
+#address::placeholder { color: color-mix(in srgb, var(--text) 55%, transparent); }
+#address::selection { background: var(--lines); color: #fff; }
+.pill { border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); border-radius: 14px;
+  padding: 4px 12px 4px 8px; font-weight: 600; }
+.pill:hover { border-color: var(--lines); }
+.sep { width: 1px; align-self: stretch; margin: 7px 6px; background: color-mix(in srgb, var(--text) 18%, transparent); }
+#volume { -webkit-app-region: no-drag; appearance: none; width: 90px; height: 4px; border-radius: 2px; cursor: pointer;
+  background: linear-gradient(var(--text), var(--text)) 0 / var(--fill, 100%) 100% no-repeat,
+              color-mix(in srgb, var(--text) 25%, transparent); }
+#volume::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+#volume:disabled { opacity: 0.4; cursor: default; }
+
+/* tabs: a frame like the address field; the ones in the background are dimmed evenly */
+#tabbar { display: flex; gap: 6px; align-items: center; padding: 0 12px 8px; overflow: hidden; max-height: 44px;
+  transition: max-height var(--t) var(--ease), padding var(--t) var(--ease), opacity var(--t) var(--ease);
+  -webkit-app-region: drag; }
+#tabbar.hidden { max-height: 0; padding-bottom: 0; opacity: 0; }
+#tabbar button, .tab { -webkit-app-region: no-drag; }
+#tabs { display: flex; gap: 6px; min-width: 0; flex: 0 1 auto; }
+.tab { display: flex; align-items: center; gap: 6px; flex: 0 1 200px; min-width: 56px; max-width: 230px;
+  padding: 3px 3px 3px 8px; background: color-mix(in srgb, var(--text) 10%, transparent);
+  border: 1px solid var(--lines); border-bottom-width: 2px; opacity: 0.42; cursor: pointer;
+  transition: opacity 200ms; }
+.tab.active { opacity: 1; }
+.tab img { width: 16px; height: 16px; }
+.tab .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .btn { padding: 2px; border-radius: 4px; }
+.tab .btn svg { width: 13px; height: 13px; }
+/* a pinned tab: only its icon (or first letter), always on the left, no close cross;
+   it opens again with the browser and Ctrl+W / middle click leave it alone */
+.tab .letter { display: none; width: 16px; text-align: center; font-weight: 700; font-size: 12px; color: var(--title); }
+.tab.pinned { flex: none; min-width: 0; width: 38px; padding: 3px; justify-content: center; }
+.tab.pinned .name, .tab.pinned .btn { display: none; }
+.tab.pinned.noicon .letter { display: block; }
+
+#load { height: 2px; }
+#load.on { background: linear-gradient(90deg, transparent, var(--lines), transparent) no-repeat;
+  background-size: 40% 100%; animation: load 1.1s linear infinite; }
+@keyframes load { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+#views { position: relative; flex: 1; margin: 0 var(--gap) var(--gap); border-radius: calc(var(--win-r) - var(--gap));
+  -electron-corner-smoothing: 0%; background: transparent !important; overflow: hidden; background: var(--bg); }
+webview { position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden; }
+webview.active { visibility: visible; }
+body.full header, body.full #tabbar, body.full #load { display: none; }
+body.full #views { margin: 0; border-radius: 0; }
+
+/* see-through (the player's Background below 100%): the window itself is transparent, and the
+   browser draws its own rounded window shape. Maximized / full screen: square, edge to edge. */
+html.see-through, html.see-through body { background: transparent; }
+/* the same round corners as the player's windows (a plain circle, no squircle smoothing) */
+html.see-through #root { background: var(--bg); border-radius: var(--win-r); overflow: hidden;
+  -electron-corner-smoothing: 0%; }
+html.see-through.maxed #root, html.see-through body.full #root { border-radius: 0; }
+/* the thin frame around the window (Color and background in the player) */
+/* The frame line twice on the same spot (--frame-dense, see setColors): the round corners get
+   as dense as the straight edges, which stay exactly the frame's own color. */
+html.framed:not(.maxed) #root { box-shadow: inset 0 0 0 1px var(--frame-dense), inset 0 0 0 1px var(--frame-dense); }
+html.framed:not(.maxed) body.full #root { box-shadow: none; }
+
+/* the start page (drawn here, see renderStart) */
+#start { position: absolute; inset: 0; z-index: 2; overflow: auto; display: none; color: var(--text);
+  user-select: none; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+#start.on { display: block; animation: startIn 200ms var(--ease); }
+@keyframes startIn { from { opacity: 0; } to { opacity: 1; } }
+#start .wrap { padding: 28px 32px; }
+#start h1 { color: var(--title); font-weight: 500; font-size: 22px; margin: 0 0 16px; }
+#start h2 { display: flex; align-items: baseline; gap: 14px; color: var(--title); font-weight: 500; font-size: 15px;
+  border-bottom: 2px solid var(--lines); padding-bottom: 4px; margin: 26px 0 12px; max-width: 900px; }
+#start .restore { margin-left: auto; font-size: 12px; color: var(--text); opacity: .7; text-decoration: none; }
+#start .restore:hover { opacity: 1; color: var(--lines); }
+#start form.q { display: flex; max-width: 620px; }
+#start input { flex: 1; min-width: 0; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text);
+  border: 1px solid var(--lines); border-bottom-width: 2px; padding: 9px 12px; font: inherit; font-size: 15px; outline: none;
+  user-select: text; }
+/* the search line reads well on any background (dark letters on a light one), like the note in
+   Color and background */
+#start form.q input { color: var(--readable); }
+#start form.q input::placeholder { color: color-mix(in srgb, var(--readable) 55%, transparent); }
+#start input::placeholder { color: color-mix(in srgb, var(--text) 55%, transparent); }
+#start input::selection { background: var(--lines); color: #fff; }
+#start .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; max-width: 900px; }
+#start .tile { position: relative; }
+#start .go { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px; border-radius: 12px;
+  color: var(--text); text-decoration: none; border: 1px solid transparent; transition: border-color 180ms, background 180ms; }
+#start .go:hover { border-color: var(--lines); background: color-mix(in srgb, var(--text) 6%, transparent); }
+#start .ic { position: relative; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--text);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; -electron-corner-smoothing: 0%; }
+#start .ic img { position: absolute; width: 26px; height: 26px; background: var(--bg); }
+#start .ic b { font-size: 19px; }
+#start .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+#start .add .ic { border-style: dashed; opacity: .7; }
+#start .add .nm { opacity: .7; }
+#start .nm { font-size: 13px; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; }
+#start .tile > .x, #start .tile:not(.add) > .ed { position: absolute; top: 5px; width: 20px; height: 20px; display: grid;
+  place-items: center; border-radius: 6px; opacity: 0; transition: opacity 160ms; }
+#start .tile > .x { right: 6px; }
+#start .tile:not(.add) > .ed { left: 6px; }
+#start .tile > .x svg, #start .tile:not(.add) > .ed svg { width: 14px; height: 14px; fill: none; stroke: var(--lines); stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+#start .tile > .x:hover, #start .tile:not(.add) > .ed:hover { background: color-mix(in srgb, var(--text) 15%, transparent); }
+#start .tile:hover > .x, #start .tile:not(.add):hover > .ed { opacity: 1; }
+#start .hint { opacity: .6; font-size: 13px; }
+#start .edit { grid-column: span 2; display: flex; flex-direction: column; gap: 7px; padding: 10px; border: 1px solid var(--lines);
+  border-radius: 12px; animation: editIn 260ms var(--ease); }
+@keyframes editIn { from { opacity: 0; transform: translateY(-6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+#start .edit input { padding: 6px 9px; font-size: 13px; }
+#start .edit .row { display: flex; gap: 7px; justify-content: flex-end; }
+#start .edit button { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-radius: 8px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+#start .edit button.ok { border-color: var(--lines); }
+#start .edit button:hover { background: color-mix(in srgb, var(--text) 14%, transparent); }
+#start .edit .err { font-size: 12px; color: var(--lines); }
+
+/* glow, like Vital (Color and background in the player): only when switched on */
+html.glow-text .btn svg, html.glow-text #start .ic svg { filter: drop-shadow(0 0 3px var(--glow-text)); }
+html.glow-text .item, html.glow-text #start .nm, html.glow-text .tab .name { text-shadow: 0 0 7px var(--glow-text); }
+html.glow-title #start h1, html.glow-title #start h2, html.glow-title .head { text-shadow: 0 0 9px var(--glow-title), 0 0 2px var(--glow-title); }
+html.glow-lines #address, html.glow-lines .tab, html.glow-lines .island, html.glow-lines #toast,
+html.glow-lines #start input, html.glow-lines #start .edit { box-shadow: 0 0 9px var(--glow-lines); }
+html.glow-lines #start h2 { box-shadow: 0 7px 9px -7px var(--glow-lines); }
+html.glow-lines #start .go:hover { box-shadow: 0 0 9px var(--glow-lines); }
+
+/* islands: small menus inside the window; they slide down out of their button and back */
+.island { position: absolute; z-index: 20; min-width: 200px; padding: 6px; background: var(--bg);
+  border: 1px solid var(--lines); border-radius: 14px; opacity: 0; pointer-events: none;
+  transform: translateY(-10px); clip-path: inset(0 0 100% 0 round 14px);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), clip-path var(--t) var(--ease); }
+.island.open { opacity: 1; pointer-events: auto; transform: none; clip-path: inset(0 0 0 0 round 14px); }
+.island { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+#sideIsland { z-index: 21; min-width: 170px; }
+#tabCard { z-index: 23; min-width: 220px; max-width: 300px; padding: 10px 14px; pointer-events: none !important; }
+#tabCard .t1 { color: var(--title); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tabCard .t1 .pin { font-weight: 400; opacity: .6; }
+#tabCard .t2 { opacity: .7; font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tabCard .mem { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; font-size: 13px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 25%, transparent); }
+#tabCard .mem { justify-content: flex-start; text-align: left; }
+#tabCard .mem svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+#ctxIsland, #plIsland { z-index: 22; }   /* over a side panel */
+#plIsland { min-width: 380px; }
+#plIsland .lab { font-size: 12px; opacity: .7; margin: 8px 0 4px 2px; }
+#plIsland .pair { display: flex; align-items: center; gap: 8px; }
+#plIsland .pair select { flex: 1; min-width: 0; }
+#plIsland .seg { display: flex; border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); border-radius: 14px; padding: 2px; }
+#plIsland .seg button { flex: 1; border: 2px solid transparent; border-radius: 12px; padding: 2px 8px; opacity: .6; white-space: nowrap; }
+#plIsland .seg button.on { opacity: 1; border-color: var(--lines); }   /* over a side panel when opened from its field */
+/* The header and the tab bar are "drag the window" areas. In Electron such an area takes the mouse
+   even under anything drawn over it, so the Search engine row (right over the tab bar) never saw
+   the mouse. The islands and the message are taken out of it. */
+.island.open, #toast, #shield { -webkit-app-region: no-drag; }
+/* (only an OPEN island: a closed one stays where it was, invisible, and its no-drag area kept a
+   piece of the header from moving the window - after a right-click menu over the header) */
+/* While a menu is open, an invisible sheet lies over everything else (pages included: a click
+   into a page never reached this window before, so the menu stayed). Any click on it, left or
+   right, only closes the menu. */
+#shield { position: absolute; inset: 0; z-index: 19; display: none; }
+#shield.on { display: block; }
+.item.sub .val { margin-left: auto; padding-left: 18px; opacity: 0.6; }
+.item.sub svg { width: 14px; height: 14px; margin-left: 6px; margin-right: -16px; }
+.item.sub.active { background: color-mix(in srgb, var(--text) 15%, transparent); }
+.item { display: flex; align-items: center; gap: 10px; padding: 7px 26px 7px 10px; border-radius: 8px;
+  cursor: pointer; white-space: nowrap; }
+.item:hover { background: color-mix(in srgb, var(--text) 15%, transparent); }
+.item .mark { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.item.on .mark { background: var(--lines); }
+.item svg { width: 16px; height: 16px; fill: none; stroke: var(--text); stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; }
+.item .key { margin-left: auto; padding-left: 24px; opacity: 0.6; }
+.head { color: var(--title); padding: 6px 10px 3px; font-size: 12px; opacity: 0.85; }
+.hr { height: 1px; margin: 5px 8px; background: color-mix(in srgb, var(--text) 18%, transparent); }
+
+/* Notebook 17: notes and passwords, an island along the right side under the header */
+.notes { display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow: hidden; width: 380px; }
+/* the window may be see-through: the notebook keeps its text readable (the same color, nearly solid, glass blur) */
+.notes { background: rgb(from var(--bg) r g b / 0.96); backdrop-filter: blur(18px); }
+.notes .top { display: flex; align-items: center; gap: 8px; }
+.notes .top .title { color: var(--title); font-weight: 700; font-size: 15px; margin-right: auto; padding-left: 4px; }
+.notes .seg { display: flex; border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); border-radius: 14px; padding: 2px; }
+.notes .seg button { background: transparent; color: var(--text); border: 2px solid transparent; border-radius: 12px;
+  padding: 2px 10px; font: inherit; font-size: 13px; opacity: .6; cursor: pointer; }
+.notes .seg button.on { opacity: 1; border-color: var(--lines); }
+.notes input, .notes textarea { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text);
+  border: 1px solid var(--lines); border-bottom-width: 2px; border-radius: 0; padding: 7px 10px; font: inherit;
+  font-size: 14px; outline: none; min-width: 0; box-sizing: border-box; width: 100%; }
+.notes input::placeholder, .notes textarea::placeholder { color: color-mix(in srgb, var(--text) 50%, transparent); }
+.notes input::selection, .notes textarea::selection { background: var(--lines); color: #fff; }
+.notes textarea { flex: 1; resize: none; line-height: 1.45; min-height: 120px;
+  scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+.notes .list { flex: 1; overflow-y: auto; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+.notes .row { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 10px; border-radius: 8px; cursor: pointer; }
+.notes .row:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
+.notes .row .txt { flex: 1; min-width: 0; }
+.notes .row .t1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notes .row .t2 { font-size: 12px; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notes .row .btn { padding: 4px; }
+.notes .row .btn svg { width: 16px; height: 16px; }
+.notes .add { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.notes .add:hover { background: color-mix(in srgb, var(--text) 12%, transparent); }
+.notes .add svg { width: 16px; height: 16px; fill: none; stroke: var(--text); stroke-width: 1.9; stroke-linecap: round; }
+.notes .empty, .notes .msg { opacity: .6; font-size: 13px; padding: 6px 10px; }
+.notes .msg.err { opacity: 1; color: var(--lines); }
+.notes .bar { display: flex; align-items: center; gap: 6px; }
+.notes .bar .grow { flex: 1; }
+.notes .lab { font-size: 12px; opacity: .7; margin: 2px 0 -4px 2px; }
+.notes .pw { display: flex; gap: 4px; align-items: center; }
+.notes .pw input { flex: 1; }
+.notes .act { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-radius: 8px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.notes .act:hover { background: color-mix(in srgb, var(--text) 14%, transparent); border-color: var(--lines); }
+.notes .act.warn { border-color: var(--lines); color: var(--lines); }
+.notes .prog { height: 2px; margin-top: 5px; background: color-mix(in srgb, var(--text) 18%, transparent); }
+.notes .prog i { display: block; height: 100%; background: var(--lines); }
+.notes .row.done { cursor: pointer; }
+.notes .row.off .t1 { opacity: .55; }
+.notes .row .ico { width: 22px; height: 22px; flex: none; border-radius: 5px; object-fit: contain; }
+.notes .row .ico.none { border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); }
+.notes .act.on { border-color: var(--lines); }
+.notes .row span.ico svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; }
+#translate.on svg { stroke: var(--lines); }
+.notes .hint { font-size: 12px; opacity: .55; padding: 0 2px; }
+.notes webview { flex: 1; min-height: 0; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 8px;
+  background: #fff; position: static; visibility: visible; width: auto; height: auto; }
+.notes select, .tr select { background: var(--bg); color: var(--text); border: 1px solid var(--lines); border-radius: 8px;
+  padding: 4px 8px; font: inherit; font-size: 13px; outline: none; }
+.notes .seg.wide { align-self: stretch; }
+.notes .seg.wide button { flex: 1; }
+.notes .langs { display: flex; align-items: center; gap: 8px; padding: 2px 6px 10px 42px; }
+.notes .langs select { flex: 1; min-width: 0; }
+.notes .langs .arrow { opacity: .6; }
+.notes .set { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+/* Translator 17: the island with a translation */
+.island.tr { max-width: 460px; min-width: 260px; padding: 10px 12px; background: rgb(from var(--bg) r g b / 0.96); backdrop-filter: blur(18px); }
+.tr .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tr .bar .name { color: var(--title); font-weight: 700; font-size: 13px; margin-right: auto; }
+.tr .out { user-select: text; white-space: pre-wrap; line-height: 1.45; max-height: 50vh; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+.tr .out::selection { background: var(--lines); color: #fff; }
+.tr .foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
+.tr .foot .from { opacity: .6; margin-right: auto; }
+.tr button { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+  border-radius: 8px; padding: 3px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.tr button:hover { background: color-mix(in srgb, var(--text) 14%, transparent); border-color: var(--lines); }
+.notes .form { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow-y: auto; }
+
+#toast { position: absolute; left: 50%; bottom: 28px; z-index: 30; padding: 7px 16px; max-width: 70%;
+  background: color-mix(in srgb, var(--bg) 94%, transparent); color: var(--text); border: 1px solid var(--lines);
+  border-radius: 12px; opacity: 0; transform: translate(-50%, 10px); pointer-events: none;
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease); }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+#toast.link { pointer-events: auto; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root">
+  <header id="header">
+    <div id="dots">
+      <button class="dot" data-act="close" style="background:#ff0080" title="Close"></button>
+      <button class="dot" data-act="min" style="background:#ff7a00" title="Minimize"></button>
+      <button class="dot" data-act="max" style="background:#0a84ff" title="Maximize"></button>
+    </div>
+    <button class="btn" id="back" data-icon="back" title="Back (Alt+Left)"></button>
+    <button class="btn" id="forward" data-icon="forward" title="Forward (Alt+Right)"></button>
+    <button class="btn" id="reload" data-icon="reload" title="Reload (F5)"></button>
+    <button class="btn" id="home" data-icon="home" title="Start page"></button>
+    <div class="space"></div>
+    <button class="btn" id="places" data-icon="down" title="Go to the player: music, video, radio"></button>
+    <input id="address" placeholder="Address or search" spellcheck="false">
+    <button class="btn" id="pin" data-icon="star" title="Add this site to the start page (or remove it)"></button>
+    <button class="btn" id="translate" data-icon="translate" title="Translate this page" style="display:none"></button>
+    <button class="btn" id="tabsArrow" data-icon="up" title="Hide the tabs"></button>
+    <button class="btn" id="burger" data-icon="menu" title="Preferences"></button>
+    <div class="space"></div>
+    <button class="btn" id="mute" data-icon="volume" title="Mute / unmute"></button>
+    <input id="volume" type="range" min="0" max="100" title="Browser volume">
+    <div class="sep"></div>
+    <button class="btn pill" id="plugins" title="The browser's own Prism EQ, limiter and VST"></button>
+  </header>
+  <div id="tabbar">
+    <div id="tabs"></div>
+    <button class="btn" id="newtab" data-icon="plus" title="New tab (Ctrl+T)"></button>
+  </div>
+  <div id="load"></div>
+  <div id="views"><div id="start"></div></div>
+  <div id="shield"></div>
+  <div class="island" id="placesIsland"></div>
+  <div class="island" id="prefsIsland"></div>
+  <div class="island" id="sideIsland"></div>
+  <div class="island" id="tabIsland"></div>
+  <div class="island" id="ctxIsland"></div>
+  <div class="island notes" id="notesPanel"></div>
+  <div class="island notes" id="dlPanel"></div>
+  <div class="island notes" id="extPanel"></div>
+<div class="island" id="tabCard"></div>
+  <div class="island tr" id="trIsland"></div>
+  <div class="island tr" id="plIsland"></div>
+  <div id="toast"></div>
+</div>
+<script>
+"use strict";
+const P = window.p17;
+const INIT = P.init() || {};
+const C = Object.assign({ bg: "#000000", text: "#0a84ff", title: "#ffffff", lines: "#ff0080" }, INIT.colors || {});
+// The player's colors, opacity included (#rrggbbaa): the Background's opacity makes the browser
+// see-through too (when the window was made see-through, see main.js).
+// white or near-black letters, whichever reads better on the background (as in the player)
+function readableOn(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex || "");
+  if (!m) return "#ffffff";
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const light = 0.2126 * lin(parseInt(m[1], 16)) + 0.7152 * lin(parseInt(m[2], 16)) + 0.0722 * lin(parseInt(m[3], 16));
+  return 1.05 / (light + 0.05) >= (light + 0.05) / 0.05 ? "#ffffff" : "#111111";
+}
+const glowOn = (v) => /^#[0-9a-f]{6}$/i.test(v) || (/^#[0-9a-f]{8}$/i.test(v) && v.slice(7).toLowerCase() !== "00");
+function setColors(colors) {
+  const root = document.documentElement;
+  for (const key of ["bg", "text", "title", "lines", "glow_text", "glow_title", "glow_lines", "frame"]) {
+    const value = String((colors || {})[key] || C[key] || "");
+    if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)) C[key] = value;
+    if (!C[key]) continue;
+    root.style.setProperty("--" + key.replace("_", "-"), C[key]);
+    if (key.startsWith("glow_")) root.classList.toggle(key.replace("_", "-"), glowOn(C[key]));
+  }
+  root.style.setProperty("--readable", readableOn(C.bg));
+  root.style.setProperty("--frame-dense", denseFrame(C.frame, C.bg));
+  root.classList.toggle("see-through", !!INIT.transparent);
+}
+// The frame is drawn twice (denser round corners); each pass must keep the straight edges as they
+// were: over a solid background the frame already mixed over it (solid), otherwise an opacity
+// that gives the frame's own one when doubled. (The same as dense_frame_color in the player.)
+function denseFrame(frame, bg) {
+  const rgba = (hex) => {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})?$/i.exec(hex || "");
+    if (!m) return [255, 0, 128, 1];
+    return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16), m[4] ? parseInt(m[4], 16) / 255 : 1];
+  };
+  const [r, g, b, a] = rgba(frame);
+  const [br, bgr, bb, ba] = rgba(bg);
+  if (ba >= 0.999 && !INIT.transparent) {
+    const mix = (c, under) => Math.round(c * a + under * (1 - a));
+    return `rgb(${mix(r, br)}, ${mix(g, bgr)}, ${mix(b, bb)})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${(1 - Math.sqrt(Math.max(0, 1 - a))).toFixed(4)})`;
+}
+document.documentElement.classList.toggle("framed", INIT.frame !== false);
+setColors(C);
+const $ = (id) => document.getElementById(id);
+
+const ENGINES = {
+  google: ["Google", "https://www.google.com/search?q={q}"],
+  duckduckgo: ["DuckDuckGo", "https://duckduckgo.com/?q={q}"],
+  bing: ["Bing", "https://www.bing.com/search?q={q}"],
+  brave: ["Brave Search", "https://search.brave.com/search?q={q}"],
+  yandex: ["Yandex", "https://yandex.com/search/?text={q}"],
+  startpage: ["Startpage", "https://www.startpage.com/do/search?q={q}"],
+  ecosia: ["Ecosia", "https://www.ecosia.org/search?q={q}"],
+};
+const SITES = [
+  ["YouTube Music", "https://music.youtube.com"], ["YouTube", "https://www.youtube.com"],
+  ["SoundCloud", "https://soundcloud.com"], ["Bandcamp", "https://bandcamp.com"],
+  ["Mixcloud", "https://www.mixcloud.com"], ["Audiomack", "https://audiomack.com"],
+  ["Jamendo", "https://www.jamendo.com"], ["Internet Archive", "https://archive.org/details/audio"],
+];
+const state = {
+  pinned: Array.isArray(INIT.pinned) ? INIT.pinned : [],
+  engine: ENGINES[INIT.engine] ? INIT.engine : "google",
+  tabsShown: INIT.tabs_shown !== false,
+  onePlayer: INIT.one_player !== false,
+  linksNewTab: !!INIT.links_new_tab,
+  theme: INIT.site_theme || "auto",
+  rate: INIT.sample_rate || "auto",   // Browser-17 on its own: the sound chain's sample rate
+  // the music sites row: the user's own edited list, or the original one (null = original)
+  sites: null,
+  sitesChanged: false,
+};
+const normUrl = (u) => String(u || "").replace(/[/]+$/, "");
+const DEFAULT_SITES = SITES.map(([title, url]) => ({ title, url }));
+const cleanList = (list) => (Array.isArray(list) ? list : [])
+  .filter((p) => p && typeof p.url === "string" && p.url)
+  .map((p) => ({ title: typeof p.title === "string" ? p.title : "", url: p.url }));
+state.pinned = cleanList(state.pinned);
+state.sitesChanged = Array.isArray(INIT.sites);
+state.sites = state.sitesChanged ? cleanList(INIT.sites) : DEFAULT_SITES.map((p) => ({ ...p }));
+
+// line icons (24x24), drawn with the text color, pink under the mouse
+const ICONS = {
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  forward: '<path d="M9 6l6 6-6 6"/>',
+  reload: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.5H15"/>',
+  home: '<path d="M4 11.5L12 5l8 6.5"/><path d="M6.5 10v9h4v-5h3v5h4v-9"/>',
+  star: '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 1 5.5-5.1-2.7-5.1 2.7 1-5.5-4-4 5.6-.8z"/>',
+  volume: '<path d="M4.5 9.5h3L12 6v12l-4.5-3.5h-3z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+  muted: '<path d="M4.5 9.5h3L12 6v12l-4.5-3.5h-3z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+  plugins: '<path d="M5 7h8M17 7h2M5 12h2M11 12h8M5 17h10"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
+  down: '<path d="M7 10l5 5 5-5"/>',
+  up: '<path d="M7 14l5-5 5 5"/>',
+  menu: '<path d="M5 7h14M5 12h14M5 17h14"/>',
+  plus: '<path d="M12 6v12M6 12h12"/>',
+  close: '<path d="M7.5 7.5l9 9M16.5 7.5l-9 9"/>',
+  pin: '<path d="M9.5 4h5l-.8 5.5 3.3 3.3H7l3.3-3.3z"/><path d="M12 12.8V20"/>',
+  unpin: '<path d="M9.5 4h5l-.8 5.5 3.3 3.3H7l3.3-3.3z"/><path d="M12 12.8V20"/><path d="M4.5 4.5l15 15"/>',
+  copy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6.5A1.5 1.5 0 0 1 6.5 5H15"/>',
+  edit: '<path d="M5 19l1-4L15.5 5.5l3 3L9 18z"/><path d="M13.5 7.5l3 3"/>',
+  music: '<path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
+  video: '<rect x="3.5" y="6.5" width="12" height="11" rx="1.5"/><path d="M15.5 10.5l5-3v9l-5-3"/>',
+  radio: '<path d="M7 7.5l11-4"/><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><circle cx="9" cy="13.5" r="2.5"/><path d="M14.5 11.5h3M14.5 15.5h3"/>',
+  cut: '<circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8.3 15.7L17 4.5M15.7 15.7L7 4.5"/>',
+  paste: '<rect x="5.5" y="5" width="13" height="15" rx="2"/><path d="M9.5 5V3.5h5V5"/><path d="M9 11h6M9 15h4"/>',
+  undo: '<path d="M9 7.5L5 11.5l4 4"/><path d="M5 11.5h9a5 5 0 0 1 0 10h-2"/>',
+  redo: '<path d="M15 7.5l4 4-4 4"/><path d="M19 11.5h-9a5 5 0 0 0 0 10h2"/>',
+  select: '<rect x="4.5" y="4.5" width="15" height="15" rx="2" stroke-dasharray="3 2.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="M20.5 16l-5-5-8.5 8"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
+  save: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19.5h14"/>',
+  note: '<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M15 3.5V7h3.5"/><path d="M9 11h6M9 14.5h6M9 18h4"/>',
+  key: '<circle cx="8" cy="15.5" r="3.5"/><path d="M10.5 13l8-8M15.5 8l2.5 2.5M17 6.5l2 2"/>',
+  user: '<circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  dice: '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><circle cx="9" cy="9" r=".9"/><circle cx="15" cy="15" r=".9"/><circle cx="15" cy="9" r=".9"/><circle cx="9" cy="15" r=".9"/>',
+  translate: '<path d="M3.5 5.5h9M8 3.5v2M5.5 5.5c.9 3 3 5.4 6 6.8M10.5 5.5c-.9 3.2-3.2 5.6-6.5 7"/><path d="M12.5 20.5l4-9 4 9M14 17.3h5"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  gauge: '<path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="M12 13.5l3.5-4"/><circle cx="12" cy="14" r="1.2"/>',
+  puzzle: '<path d="M10 4.5h4v2.5a1.5 1.5 0 0 0 3 0V4.5h2.5V10H17a1.5 1.5 0 0 0 0 3h2.5v6.5H14V17a1.5 1.5 0 0 0-3 0v2.5H4.5V14H7a1.5 1.5 0 0 0 0-3H4.5V4.5z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.5M12 18v2.5M3.5 12H6M18 12h2.5M6 6l1.8 1.8M16.2 16.2L18 18M6 18l1.8-1.8M16.2 7.8L18 6"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  play: '<path d="M8 5.5v13l10-6.5z"/>',
+  trash: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>',
+};
+const svg = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ""}</svg>`;
+const esc = (text) => String(text == null ? "" : text).replace(/[&<>"']/g,
+  (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
+document.querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = svg(el.dataset.icon); });
+const DOT_SYMBOLS = { close: '<path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/>', min: '<path d="M7.5 12h9"/>',
+  max: '<path d="M8.5 8.5h7v7h-7z"/>' };
+document.querySelectorAll(".dot").forEach((dot) => {
+  dot.innerHTML = `<svg viewBox="0 0 24 24">${DOT_SYMBOLS[dot.dataset.act]}</svg>`;
+  dot.onclick = () => P.win({ action: dot.dataset.act });
+});
+$("plugins").innerHTML = svg("plugins") + "<span>Plugins</span>";
+$("header").addEventListener("dblclick", (e) => { if (e.target === $("header") || e.target.classList.contains("space")) P.win({ action: "max" }); });
+
+// ---------------- the start page ----------------
+// Drawn by the browser window itself, over the tab's (empty) page: so it is see-through with the
+// window, follows the colors at once, and its tiles are edited right here. The tab underneath
+// holds an empty "Start" page only for the history (Back returns to it).
+// Every tile can be edited: the pencil opens its address and name, the cross removes it, the "+"
+// tile adds a site; both rows (your sites, music sites).
+const startUrl = () => "data:text/html;charset=utf-8," +
+  encodeURIComponent('<!doctype html><title>Start</title><meta name="color-scheme" content="only light"><body style="background:transparent"></body>');
+const isStartUrl = (u) => !u || u.startsWith("data:");
+
+function tileHtml(list, i, title, url) {
+  let host = "";
+  try { host = new URL(url).host; } catch (e) {}
+  const letter = esc((title || host || "?").slice(0, 1).toUpperCase());
+  return `<div class="tile" data-l="${list}" data-i="${i}" data-t="${esc(title || "")}" data-u="${esc(url)}">` +
+    `<a class="go" href="${esc(url)}" draggable="false"><span class="ic">` +
+    `<img src="https://icons.duckduckgo.com/ip3/${esc(host)}.ico" onerror="this.remove()"><b>${letter}</b></span>` +
+    `<span class="nm">${esc(title || host)}</span></a>` +
+    `<a class="ed" href="#" title="Edit">${svg("edit")}</a>` +
+    `<a class="x" href="#" title="Remove">${svg("close")}</a></div>`;
+}
+const addTileHtml = (list) => `<div class="tile add" data-l="${list}" data-i="-1" data-t="" data-u="">` +
+  `<a class="go ed" href="#" title="Add a site"><span class="ic">${svg("plus")}</span><span class="nm">Add site</span></a></div>`;
+
+function renderStart() {
+  const box = $("start");
+  const keep = box.querySelector("form.q input");
+  const typed = keep ? keep.value : "";
+  const hadFocus = keep && document.activeElement === keep;
+  const [name] = ENGINES[state.engine];
+  const own = state.pinned.map((p, i) => tileHtml("own", i, p.title, p.url)).join("");
+  const ready = state.sites.map((p, i) => tileHtml("music", i, p.title, p.url)).join("");
+  const hint = own ? "" : '<p class="hint">Press "+" and type a site, or open any site and press the star at the top.</p>';
+  const restore = state.sitesChanged ? '<a class="restore" href="#">Restore the original list</a>' : "";
+  box.innerHTML = `<div class="wrap"><h1>${INIT.standalone ? "Browser-17" : "Player-17 browser"}</h1>` +
+    `<form class="q"><input name="q" placeholder="Search with ${esc(name)}" spellcheck="false"></form>` +
+    `<h2>Your sites</h2>${hint}<div class="grid">${own}${addTileHtml("own")}</div>` +
+    `<h2>Music sites ${restore}</h2><div class="grid">${ready}${addTileHtml("music")}</div></div>`;
+  const input = box.querySelector("form.q input");
+  input.value = typed;
+  if (hadFocus) input.focus();
+}
+
+function updateStart() {
+  const on = !!current && current.view === "start";
+  $("start").classList.toggle("on", on);
+  for (const tab of tabs) tab.wv.style.visibility = tab === current && on ? "hidden" : "";
+}
+
+let startEdit = null;
+function closeStartEdit() {
+  if (startEdit) { startEdit.form.remove(); startEdit.tile.style.display = ""; startEdit = null; }
+}
+function editTile(tile) {
+  closeStartEdit();
+  const form = document.createElement("form");
+  form.className = "edit";
+  form.innerHTML = '<input class="site" placeholder="Site, e.g. soundcloud.com" spellcheck="false">' +
+    '<input class="name" placeholder="Name (optional)" spellcheck="false"><div class="err"></div>' +
+    `<div class="row"><button type="button" class="cancel">Cancel</button>` +
+    `<button type="submit" class="ok">${tile.dataset.i === "-1" ? "Add" : "Save"}</button></div>`;
+  const site = form.querySelector(".site"), title = form.querySelector(".name"), err = form.querySelector(".err");
+  site.value = tile.dataset.u;
+  title.value = tile.dataset.t;
+  form.querySelector(".cancel").onclick = closeStartEdit;
+  form.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeStartEdit(); } });
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    let u = site.value.trim();
+    if (!u) { err.textContent = "Type the site's address"; site.focus(); return; }
+    if (!u.includes("://")) u = "https://" + u;
+    let parsed;
+    try { parsed = new URL(u); } catch (x) { parsed = null; }
+    if (!parsed || !/^https?:$/.test(parsed.protocol) || !parsed.hostname.includes(".")) {
+      err.textContent = "This does not look like a site address"; site.focus(); return;
+    }
+    saveTile(tile.dataset.l, parseInt(tile.dataset.i, 10), parsed, title.value.trim());
+  };
+  tile.parentNode.insertBefore(form, tile);
+  tile.style.display = "none";
+  startEdit = { form, tile };
+  site.focus();
+  site.select();
+}
+function saveTile(listName, i, url, title) {
+  const own = listName !== "music";
+  const list = own ? state.pinned : state.sites;
+  const entry = { title: title || url.hostname.replace(/^www[.]/, ""), url: url.href };
+  if (i >= 0 && i < list.length) list[i] = entry;
+  else list.push(entry);
+  startEdit = null;
+  saveStartLists(own ? "own" : "music");
+}
+function removeTile(listName, i) {
+  const own = listName !== "music";
+  const list = own ? state.pinned : state.sites;
+  if (i >= 0 && i < list.length) list.splice(i, 1);
+  saveStartLists(own ? "own" : "music");
+}
+
+$("start").addEventListener("click", (e) => {
+  const tile = e.target.closest(".tile");
+  if (e.target.closest(".restore")) {
+    e.preventDefault();
+    state.sites = DEFAULT_SITES.map((p) => ({ ...p }));
+    state.sitesChanged = false;
+    P.send({ ev: "set", key: "web_sites", value: null });
+    refreshStartPages();
+  } else if (tile && e.target.closest(".x")) {
+    e.preventDefault();
+    removeTile(tile.dataset.l, parseInt(tile.dataset.i, 10));
+  } else if (tile && e.target.closest(".ed")) {
+    e.preventDefault();
+    editTile(tile);
+  } else if (tile && e.target.closest(".go")) {
+    e.preventDefault();
+    const url = tile.dataset.u;
+    if (e.ctrlKey || e.metaKey) newTab(url, false);
+    else { navigate(current, url); current.wv.focus(); }
+  }
+});
+$("start").addEventListener("auxclick", (e) => {  // middle click on a tile: a new tab
+  const tile = e.target.closest(".tile:not(.add)");
+  if (tile && e.button === 1) { e.preventDefault(); newTab(tile.dataset.u, false); }
+});
+$("start").addEventListener("submit", (e) => {
+  if (!e.target.classList.contains("q")) return;
+  e.preventDefault();
+  const v = e.target.q.value.trim();
+  if (v) { e.target.q.value = ""; go(v); }
+});
+
+// ---------------- tabs ----------------
+const tabs = [];
+let current = null;
+let lastPlaying = false;
+const PAUSE_JS = "document.querySelectorAll('video, audio').forEach(function (m) { m.pause(); });";
+
+function urlOf(tab) {
+  if (tab.lazy) return tab.lazy;   // not loaded yet: its address
+  try { return tab.wv.getURL() || ""; } catch (e) { return tab.pending || ""; }
+}
+const onStart = (tab) => !!tab && tab.view === "start";
+
+// lazy: a tab brought back at start that isn't shown yet. It keeps only its address and loads the
+// page when it is first opened, so a pinned YouTube Music doesn't start playing by itself.
+function newTab(url, switchTo = true, pinned = false, lazy = false) {
+  const tab = { title: "", audible: false, loading: false, pending: url || "", pinned: false,
+    view: url ? "page" : "start", lazy: lazy && url ? url : "" };
+  const wv = document.createElement("webview");
+  wv.setAttribute("allowpopups", "");
+  // a tab brought back opens paused (like Brave): its music waits for a click on Play. Starting
+  // by itself while the heavy page was still loading, YouTube Music stuttered at first.
+  if (tab.lazy) wv.setAttribute("webpreferences", "autoplayPolicy=document-user-activation-required");
+  wv.setAttribute("src", tab.lazy ? startUrl() : (url || startUrl()));
+  tab.wv = wv;
+  const chip = document.createElement("div");
+  chip.className = "tab noicon";
+  chip.innerHTML = `<img hidden><b class="letter"></b><span class="name">New tab</span>` +
+    `<button class="btn" title="Close tab (Ctrl+W, or middle click on the tab)">${svg("close")}</button>`;
+  chip.addEventListener("mousedown", (e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab); } });
+  chip.addEventListener("click", (e) => { if (e.target.closest("button")) closeTab(tab); else selectTab(tab); });
+  chip.addEventListener("contextmenu", (e) => { e.preventDefault(); hideTabCard(); openTabMenu(tab); });
+  chip.addEventListener("mouseenter", () => tabCardSoon(tab));
+  chip.addEventListener("mouseleave", hideTabCard);
+  chip.addEventListener("mousedown", hideTabCard);
+  tab.chip = chip;
+  $("tabs").appendChild(chip);
+  $("views").appendChild(wv);
+  tabs.push(tab);
+  if (pinned) setPinned(tab, true, false);
+
+  wv.addEventListener("page-title-updated", (e) => { tab.title = e.title; updateChip(tab); if (tab === current) sendTitle(); });
+  wv.addEventListener("did-navigate", (e) => {
+    if (tab.lazy) { tab.view = "page"; updateChip(tab); return; }   // (its blank placeholder, not its page)
+    tab.pending = "";
+    tab.view = isStartUrl(e.url) ? "start" : "page";
+    if (tab === current) updateStart();
+    updateChip(tab);
+    if (tab === current) showAddress();
+    if (tab.pinned) savePinnedTabs(); // a pinned tab opens again where it was left
+  });
+  wv.addEventListener("did-navigate-in-page", (e) => {
+    if (e.isMainFrame !== false && tab === current) showAddress();
+    if (e.isMainFrame !== false) pageExtras(tab);
+  });
+  wv.addEventListener("did-start-loading", () => { tab.loading = true; if (tab === current) $("load").classList.add("on"); });
+  wv.addEventListener("did-stop-loading", () => {
+    tab.loading = false;
+    if (tab === current) { $("load").classList.remove("on"); showAddress(); }
+    pageExtras(tab);
+  });
+  wv.addEventListener("page-favicon-updated", (e) => {
+    const img = chip.querySelector("img");
+    if (e.favicons && e.favicons[0] && !onStart(tab)) {
+      img.onerror = () => { img.hidden = true; chip.classList.add("noicon"); };
+      img.src = e.favicons[0];
+      img.hidden = false;
+      chip.classList.remove("noicon");
+    }
+  });
+  wv.addEventListener("media-started-playing", () => {
+    tab.audible = true;
+    if (state.onePlayer) pauseOthers(tab);
+    updateChip(tab);
+    reportPlaying(true);
+  });
+  wv.addEventListener("media-paused", () => { tab.audible = false; updateChip(tab); reportPlaying(false); });
+  wv.addEventListener("enter-html-full-screen", () => document.body.classList.add("full"));
+  wv.addEventListener("leave-html-full-screen", () => document.body.classList.remove("full"));
+  wv.addEventListener("render-process-gone", () => setTimeout(() => { try { wv.reload(); } catch (e) {} }, 600));
+
+  if (tab.lazy) updateChip(tab);
+  if (switchTo || (!current && !tab.lazy)) selectTab(tab);
+  else notice(state.tabsShown ? "" : `Opened in a new tab (${tabs.length} tabs)`);
+  return tab;
+}
+
+function selectTab(tab) {
+  if (!tabs.includes(tab)) return;
+  if (tab.lazy) {   // first opened: now the page loads
+    const u = tab.lazy;
+    tab.lazy = "";
+    tab.pending = u;
+    try { tab.wv.loadURL(u).catch(() => {}); } catch (e) { tab.wv.setAttribute("src", u); }
+  }
+  current = tab;
+  for (const other of tabs) {
+    other.wv.classList.toggle("active", other === tab);
+    other.chip.classList.toggle("active", other === tab);
+  }
+  $("load").classList.toggle("on", tab.loading);
+  updateStart();
+  showAddress(true);
+  sendTitle();
+}
+
+function closeTab(tab, force = false) {
+  if (!tabs.includes(tab)) return;
+  if (tab.pinned && !force) {
+    notice("The tab is pinned: right click on it → Unpin tab, then it can be closed");
+    return;
+  }
+  if (tab.pinned) setPinned(tab, false, false);
+  if (tabs.length === 1) { showStart(tab); savePinnedTabs(); return; } // the last tab goes back to the start page
+  const i = tabs.indexOf(tab);
+  tabs.splice(i, 1);
+  tab.chip.remove();
+  tab.wv.remove();
+  if (tab === current) selectTab(tabs[Math.min(i, tabs.length - 1)]);
+  if (tab.audible) reportPlaying(false);
+  savePinnedTabs();
+}
+
+// ---------------- pinned tabs ----------------
+// Pin / unpin from the tab's own menu (right click). Pinned tabs stand first, show only the
+// site's icon, are not closed by accident and open again with the browser.
+function setPinned(tab, on, save = true) {
+  on = !!on;
+  tab.pinned = on;
+  tab.chip.classList.toggle("pinned", on);
+  // the order: every pinned tab first (in the list and on screen)
+  tabs.splice(tabs.indexOf(tab), 1);
+  const pinnedCount = tabs.filter((t) => t.pinned).length;
+  tabs.splice(pinnedCount, 0, tab); // right after the pinned ones
+  const after = tabs[tabs.indexOf(tab) + 1];
+  $("tabs").insertBefore(tab.chip, after ? after.chip : null);
+  updateChip(tab);
+  if (save) {
+    savePinnedTabs();
+    notice(on ? "Tab pinned: it opens again with the browser" : "Tab unpinned");
+  }
+}
+let pinSave = 0;
+function savePinnedTabs() {
+  clearTimeout(pinSave);
+  pinSave = setTimeout(() => {
+    const urls = tabs.filter((t) => t.pinned && !onStart(t)).map(urlOf).filter(Boolean);
+    P.send({ ev: "set", key: "web_pinned_tabs", value: urls });
+  }, 300);
+}
+function openTabMenu(tab) {
+  const build = (island) => {
+    const others = tabs.filter((t) => t !== tab && !t.pinned);
+    const rows = [
+      tab.pinned
+        ? item("Unpin tab", { icon: "unpin", act: () => setPinned(tab, false) })
+        : item("Pin tab", { icon: "pin", act: () => setPinned(tab, true) }),
+      item("Reload", { icon: "reload", act: () => { try { tab.wv.reload(); } catch (e) {} } }),
+      item("Duplicate tab", { icon: "copy", act: () => newTab(onStart(tab) ? "" : urlOf(tab), true) }),
+      hr(),
+      item(tab.pinned ? "Unpin and close" : "Close tab", { icon: "close", key: tab.pinned ? "" : "Ctrl+W",
+        act: () => closeTab(tab, true) }),
+    ];
+    if (others.length) {
+      rows.push(item("Close other tabs", { icon: "close", act: () => others.forEach((t) => closeTab(t)) }));
+    }
+    island.replaceChildren(...rows);
+  };
+  openIslandAt($("tabIsland"), tab.chip, "left", build);
+}
+
+function stepTab(delta) {
+  if (tabs.length > 1) selectTab(tabs[(tabs.indexOf(current) + delta + tabs.length) % tabs.length]);
+}
+
+function navigate(tab, url) {
+  tab.pending = url;
+  tab.view = isStartUrl(url) ? "start" : "page";
+  if (tab === current) updateStart();
+  try { tab.wv.loadURL(url).catch(() => {}); } catch (e) { tab.wv.setAttribute("src", url); }
+}
+
+function showStart(tab) {
+  tab = tab || current;
+  const img = tab.chip.querySelector("img");
+  img.hidden = true;
+  tab.chip.classList.add("noicon");
+  navigate(tab, startUrl());
+}
+
+function go(text) {
+  text = text.trim();
+  if (!text) return;
+  let url;
+  const first = text.split(" ")[0];
+  if (first.includes("://")) url = text;
+  else if (!text.includes(" ") && text.includes(".")) url = "https://" + text;
+  else if (urlOf(current).includes("music.youtube.com")) url = "https://music.youtube.com/search?q=" + encodeURIComponent(text);
+  else url = ENGINES[state.engine][1].replace("{q}", encodeURIComponent(text));
+  navigate(current, url);
+  current.wv.focus();
+}
+
+function pauseOthers(playing) {
+  for (const tab of tabs) {
+    if (tab !== playing && tab.audible) tab.wv.executeJavaScript(PAUSE_JS).catch(() => {});
+  }
+}
+
+function reportPlaying(started) {
+  const on = tabs.some((t) => t.audible);
+  if (on !== lastPlaying || started) {
+    lastPlaying = on;
+    P.send({ ev: "playing", on });
+  }
+}
+
+function updateChip(tab) {
+  let host = "";
+  try { host = new URL(urlOf(tab)).host; } catch (e) {}
+  const text = onStart(tab) ? "Start page" : (tab.title || host || "New tab");
+  tab.chip.querySelector(".name").textContent = (tab.audible ? "♪  " : "") + text;
+  tab.chip.querySelector(".letter").textContent = (host.replace(/^www\./, "") || text || "?").slice(0, 1).toUpperCase();
+  tab.chip.classList.toggle("playing", !!tab.audible);
+  tab.chip.removeAttribute("title");   // (the tab's card says it: tabCard)
+}
+
+// the tab's card, under the tab while the pointer rests on it (like Brave): its name, its
+// address and how much memory its page takes
+let tabCardTimer = 0;
+function tabCardSoon(tab) {
+  clearTimeout(tabCardTimer);
+  tabCardTimer = setTimeout(() => showTabCard(tab), $("tabCard").classList.contains("open") ? 0 : 450);
+}
+function hideTabCard() {
+  clearTimeout(tabCardTimer);
+  $("tabCard").classList.remove("open");
+}
+async function showTabCard(tab) {
+  if (!tabs.includes(tab) || openIsland) return;
+  const card = $("tabCard");
+  let host = "";
+  try { host = new URL(urlOf(tab)).host; } catch (e) {}
+  const name = onStart(tab) ? "Start page" : (tab.title || host || "New tab");
+  const line = (text) => `<div class="mem">${svg("gauge")}<span>${esc(text)}</span></div>`;
+  const fill = (memText) => {
+    card.innerHTML = `<div class="t1">${esc(name)}${tab.pinned ? ' <span class="pin">· pinned</span>' : ""}</div>` +
+      (host && !onStart(tab) ? `<div class="t2">${esc(host)}</div>` : "") + line(memText);
+  };
+  fill(tab.lazy ? "Asleep: loads when opened" : "Memory usage: …");
+  const r = tab.chip.getBoundingClientRect();
+  card.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + "px";
+  card.style.top = (r.bottom + 6) + "px";
+  card.classList.add("open");
+  if (tab.lazy) return;
+  let mb = 0;
+  try { mb = await P.mem(tab.wv.getWebContentsId()); } catch (e) {}
+  if (card.classList.contains("open")) fill(mb ? `Memory usage: ${mb} MB` : "Memory usage: —");
+}
+
+function cleanTitle(tab) {
+  let title = onStart(tab) ? "" : (tab.title || "").trim();
+  for (const tail of [" - YouTube Music", " | YouTube Music"]) {
+    if (title.endsWith(tail)) title = title.slice(0, -tail.length);
+  }
+  return title;
+}
+
+function sendTitle() {
+  if (!current) return;
+  const title = cleanTitle(current);
+  const appName = INIT.standalone ? "Browser-17" : "Player-17 Browser";
+  document.title = title ? `${title}  ·  ${appName}` : appName;
+  P.send({ ev: "title", text: title });
+}
+
+function showAddress(force) {
+  if (!current) return;
+  if (typeof updateTranslateButton === "function") updateTranslateButton();
+  const url = onStart(current) ? "" : urlOf(current);
+  let back = false, forward = false;
+  try { back = current.wv.canGoBack(); forward = current.wv.canGoForward(); } catch (e) {}
+  $("back").disabled = !back;
+  $("forward").disabled = !forward;
+  const pinned = !!url && state.pinned.some((p) => normUrl(p.url) === normUrl(url));
+  $("pin").querySelector("svg").style.fill = pinned ? "var(--text)" : "none";
+  $("pin").disabled = !url;
+  if (force || document.activeElement !== $("address")) $("address").value = url;
+}
+
+function togglePin() {
+  if (onStart(current)) return;
+  const url = urlOf(current);
+  if (state.pinned.some((p) => normUrl(p.url) === normUrl(url))) {
+    state.pinned = state.pinned.filter((p) => normUrl(p.url) !== normUrl(url));
+    notice("Removed from the start page");
+  } else {
+    state.pinned.push({ title: current.title || url, url });
+    notice("Added to the start page");
+  }
+  P.send({ ev: "set", key: "web_pinned", value: state.pinned });
+  showAddress();
+  refreshStartPages();
+}
+
+function refreshStartPages() {
+  renderStart();  // one start page for every tab: drawn again, no page loads
+}
+
+// ---------------- the header ----------------
+$("back").onclick = () => { try { current.wv.goBack(); } catch (e) {} };
+$("forward").onclick = () => { try { current.wv.goForward(); } catch (e) {} };
+$("reload").onclick = () => { try { current.wv.reload(); } catch (e) {} };
+$("home").onclick = () => {
+  if (onStart(current)) { const q = $("start").querySelector("form.q input"); if (q) q.focus(); }
+  else showStart();
+};
+$("pin").onclick = togglePin;
+$("newtab").onclick = () => { newTab(); $("address").focus(); };
+$("address").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") go($("address").value);
+  else if (e.key === "Escape") { showAddress(true); current.wv.focus(); }
+});
+$("address").addEventListener("focus", () => setTimeout(() => $("address").select(), 0));
+
+// sound: the browser's own volume and Plugins (the player plays the sound through its chain)
+let beforeMute = 100;
+const volume = $("volume");
+volume.value = Math.round((Number(INIT.volume == null ? 1 : INIT.volume)) * 100);
+function showVolume() {
+  volume.style.setProperty("--fill", volume.value + "%");
+  $("mute").innerHTML = svg(Number(volume.value) === 0 ? "muted" : "volume");
+}
+volume.addEventListener("input", () => { showVolume(); P.send({ ev: "volume", value: volume.value / 100 }); });
+$("mute").onclick = () => {
+  if (Number(volume.value) > 0) { beforeMute = Number(volume.value); volume.value = 0; }
+  else volume.value = beforeMute || 100;
+  volume.dispatchEvent(new Event("input"));
+};
+showVolume();
+$("plugins").onclick = () => P.send({ ev: "plugins" });   // the Plugins window (the player's own)
+if (INIT.route === false) {
+  for (const id of ["mute", "volume", "plugins"]) {
+    $(id).disabled = true;
+    $(id).title = "Needs pactl:  sudo apt install pulseaudio-utils  (then restart the player)";
+  }
+  setTimeout(() => notice("Volume and Plugins need pactl:  sudo apt install pulseaudio-utils"), 800);
+}
+
+// tabs shown / hidden
+function showTabs(on, save = true) {
+  if (save && state.tabsShown !== !!on) motionBlur($("tabbar"), !!on);
+  state.tabsShown = !!on;
+  $("tabbar").classList.toggle("hidden", !on);
+  $("tabsArrow").innerHTML = svg(on ? "up" : "down");
+  $("tabsArrow").title = on ? "Hide the tabs" : `Show the tabs (${tabs.length} open)`;
+  if (save) P.send({ ev: "set", key: "web_tabs_shown", value: state.tabsShown });
+}
+$("tabsArrow").onclick = () => showTabs(!state.tabsShown);
+
+// ---------------- motion blur ----------------
+// Menus, the tab bar and messages slide in with a light vertical blur that clears as they come
+// to rest (and blur again on the way out): the same calm "motion blur" in all the apps.
+// Turned off when the system asks for less motion.
+const MOTION_BLUR = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let blurCount = 0;
+function motionBlur(el, opening, ms = 210, amount = 4) {
+  if (!MOTION_BLUR || !el) return;
+  if (!el._mb) {
+    const NS = "http://www.w3.org/2000/svg";
+    const holder = document.createElementNS(NS, "svg");
+    holder.setAttribute("width", "0");
+    holder.setAttribute("height", "0");
+    holder.style.position = "absolute";
+    const filter = document.createElementNS(NS, "filter");
+    filter.id = "p17mb" + (++blurCount);
+    for (const [k, v] of [["x", "-4%"], ["y", "-25%"], ["width", "108%"], ["height", "150%"]]) filter.setAttribute(k, v);
+    const blur = document.createElementNS(NS, "feGaussianBlur");
+    blur.setAttribute("stdDeviation", "0 0");
+    filter.appendChild(blur);
+    holder.appendChild(filter);
+    document.body.appendChild(holder);
+    el._mb = { id: filter.id, blur, frame: 0 };
+  }
+  const mb = el._mb;
+  cancelAnimationFrame(mb.frame);
+  const start = performance.now();
+  el.style.filter = `url(#${mb.id})`;
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / ms);
+    const eased = 1 - Math.pow(1 - k, 3);
+    const y = amount * (opening ? 1 - eased : eased);
+    mb.blur.setAttribute("stdDeviation", "0 " + y.toFixed(2));
+    if (k < 1) mb.frame = requestAnimationFrame(step);
+    else el.style.filter = ""; // at rest: no filter at all (sharp, and no cost)
+  };
+  mb.frame = requestAnimationFrame(step);
+}
+
+// ---------------- islands ----------------
+let openIsland = null;
+function placeIsland(island, anchor, align) {
+  const root = $("root").getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const w = island.offsetWidth;
+  let x = align === "center" ? a.left + a.width / 2 - w / 2 : a.left;
+  x = Math.max(8, Math.min(x, root.width - w - 8));
+  const top = a.bottom + 4;
+  island.style.left = x + "px";
+  island.style.top = top + "px";
+  island.style.maxHeight = Math.max(120, root.height - top - 10) + "px";
+}
+function openIslandAt(island, anchor, align, build) {
+  if (openIsland === island) { closeIslands(); return; }
+  closeIslands();
+  build(island);
+  placeIsland(island, anchor, align);
+  island.classList.add("open");
+  motionBlur(island, true);
+  openIsland = island;
+  $("shield").classList.add("on");
+}
+// A right-click menu over a field of a side panel (Notebook, Extensions…): closing that menu leaves
+// the panel open under it.
+let ctxOver = null;
+// A click anywhere in that panel outside the small island closes the island (only that: the click
+// does nothing else, as a click beside any menu); the panel stays.
+let swallowClick = false;
+document.addEventListener("mousedown", (e) => {
+  if (!ctxOver || !openIsland || openIsland === ctxOver) return;
+  if (openIsland.contains(e.target) || !ctxOver.contains(e.target)) return;
+  e.preventDefault(); e.stopPropagation();
+  swallowClick = true;
+  setTimeout(() => { swallowClick = false; }, 600);   // (no click came: a drag)
+  closeIslands();
+}, true);
+document.addEventListener("click", (e) => {
+  if (!swallowClick) return;
+  swallowClick = false;
+  e.preventDefault(); e.stopPropagation();
+}, true);
+function closeIslands() {
+  const keep = ctxOver;
+  ctxOver = null;
+  document.querySelectorAll(".island.open").forEach((i) => { if (i !== keep) { i.classList.remove("open"); motionBlur(i, false); } });
+  openIsland = keep;
+  $("shield").classList.toggle("on", !!keep);
+  closeSide();
+}
+
+// a small island beside the Preferences island (search engine, site theme): it opens when the
+// mouse rests on its row (or on a click), next to that row, and fits into the window too
+let sideOwner = null;
+let sideHide = 0;
+// The side island closes by itself, with nothing chosen, once the mouse is neither on its row
+// nor on the side island (a short pause lets the mouse travel from the row to the island).
+function closeSideSoon() {
+  clearTimeout(sideHide);
+  sideHide = setTimeout(closeSide, 260);
+}
+$("sideIsland").addEventListener("mouseenter", () => clearTimeout(sideHide));
+$("sideIsland").addEventListener("mouseleave", closeSideSoon);
+function closeSide() {
+  clearTimeout(sideHide);
+  if ($("sideIsland").classList.contains("open")) motionBlur($("sideIsland"), false);
+  $("sideIsland").classList.remove("open");
+  if (sideOwner) sideOwner.classList.remove("active");
+  sideOwner = null;
+}
+function openSide(row, build) {
+  const side = $("sideIsland");
+  if (sideOwner === row && side.classList.contains("open")) return;
+  closeSide();
+  build(side);
+  const root = $("root").getBoundingClientRect();
+  const main = $("prefsIsland").getBoundingClientRect();
+  const r = row.getBoundingClientRect();
+  side.style.maxHeight = (root.height - 20) + "px";
+  const w = side.offsetWidth, h = side.offsetHeight;
+  // to the right, where the arrows point; to the left only when the window is too narrow there
+  let x = main.right + 6;
+  if (x + w > root.width - 8) x = main.left - w - 6;
+  if (x < 8) x = Math.max(8, root.width - w - 8);
+  const top = Math.max(8, Math.min(r.top - 6, root.height - h - 10));
+  side.style.left = x + "px";
+  side.style.top = top + "px";
+  row.classList.add("active");
+  sideOwner = row;
+  side.classList.add("open");
+  motionBlur(side, true);
+}
+function subItem(text, value, build) {
+  const el = document.createElement("div");
+  el.className = "item sub";
+  el.innerHTML = `<span class="mark"></span><span>${esc(text)}</span><span class="val">${esc(value)}</span>${svg("forward")}`;
+  let timer = 0;
+  el.addEventListener("mouseenter", () => {
+    clearTimeout(timer);
+    if (sideOwner === el) clearTimeout(sideHide); // back on its own row: it stays
+    else timer = setTimeout(() => openSide(el, build), 140);
+  });
+  el.addEventListener("mouseleave", () => { clearTimeout(timer); if (sideOwner === el) closeSideSoon(); });
+  el.onclick = () => { clearTimeout(timer); openSide(el, build); };
+  return el;
+}
+function item(text, { icon, on, key, act, keep } = {}) {
+  const el = document.createElement("div");
+  el.className = "item" + (on ? " on" : "");
+  el.innerHTML = (icon ? svg(icon) : `<span class="mark"></span>`) + `<span>${esc(text)}</span>` +
+    (key ? `<span class="key">${esc(key)}</span>` : "");
+  el.addEventListener("mouseenter", () => { if (sideOwner && !el.closest("#sideIsland")) closeSide(); });
+  el.onclick = () => {
+    if (act) act();
+    if (keep) { if (openIsland) openIsland.dispatchEvent(new Event("rebuild")); }
+    else setTimeout(closeIslands, on === undefined ? 0 : 120);
+  };
+  return el;
+}
+const head = (text) => Object.assign(document.createElement("div"), { className: "head", textContent: text });
+const hr = () => Object.assign(document.createElement("div"), { className: "hr" });
+
+function buildPlaces(island) {
+  if (INIT.standalone) {   // Browser-17 on its own: Player-17 opens (music, video and radio are inside)
+    island.replaceChildren(item("Open Player-17", { icon: "music", act: () => P.send({ ev: "goto", where: "music" }) }));
+    return;
+  }
+  island.replaceChildren(
+    item("Music player", { icon: "music", act: () => P.send({ ev: "goto", where: "music" }) }),
+    item("Video player", { icon: "video", act: () => P.send({ ev: "goto", where: "video" }) }),
+    item("Radio", { icon: "radio", act: () => P.send({ ev: "goto", where: "radio" }) }),
+  );
+}
+const THEME_NAMES = [["auto", "As the system"], ["dark", "Dark"], ["light", "Light"]];
+function buildEngines(side) {
+  side.replaceChildren(...Object.entries(ENGINES).map(([key, [name]]) => item(name, { on: state.engine === key, act: () => {
+    state.engine = key;
+    P.send({ ev: "set", key: "web_engine", value: key });
+    refreshStartPages();
+    notice(`Searching with ${name}`);
+  } })));
+}
+function buildThemes(side) {
+  side.replaceChildren(...THEME_NAMES.map(([key, name]) => item(name, { on: state.theme === key, act: () => {
+    state.theme = key;
+    P.send({ ev: "set", key: "web_site_theme", value: key });
+  } })));
+}
+const RATE_NAMES = [["auto", "Auto (as the device)"], ["44100", "44.1 kHz"], ["48000", "48 kHz"], ["96000", "96 kHz"]];
+function buildRates(side) {
+  side.replaceChildren(...RATE_NAMES.map(([key, name]) => item(name, { on: state.rate === key, act: () => {
+    if (state.rate === key) return;
+    state.rate = key;
+    P.send({ ev: "rate", value: key });
+    notice(`Sample rate: ${name}`);
+  } })));
+}
+// ---------------- Shield 17 (in Preferences) ----------------
+let shield = null;   // the last state from the main process
+const SH = window.p17 && window.p17.sh;
+async function shieldRefresh() {
+  try { shield = await SH.get(); } catch (e) { shield = null; }
+  return shield;
+}
+if (SH) shieldRefresh();
+function shieldDate(t) {
+  if (!t) return "never";
+  try { return new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" }); } catch (e) { return ""; }
+}
+function buildShield(side) {
+  if (!shield) { side.replaceChildren(head("Shield 17 is loading…")); shieldRefresh().then(() => shield && buildShield(side)); return; }
+  const s = shield.settings;
+  const set = (patch) => SH.set(patch).then((st) => { shield = st; buildShield(side); });
+  const page = current ? urlOf(current) : "";
+  const site = (() => { try { return new URL(page).hostname.replace(/^www\./, ""); } catch (e) { return ""; } })();
+  const web = /^https?:/i.test(page);
+  const rows = [
+    item("Shield 17", { on: s.enabled, keep: true, act: () => set({ enabled: !s.enabled }) }),
+    hr(),
+    item("Block ads and trackers", { on: s.ads, keep: true, act: () => set({ ads: !s.ads }) }),
+    item("Block other sites' cookies", { on: s.cookies, keep: true, act: () => set({ cookies: !s.cookies }) }),
+    item("Gentle on banks and gov sites", { on: s.gentle, keep: true, act: () => set({ gentle: !s.gentle }) }),
+  ];
+  if (web && site) {
+    SH.mode(page).then((mode) => {
+      const row = side.querySelector("[data-site-row]");
+      if (!row) return;
+      const off = (s.off || []).some((x) => site === x || site.endsWith("." + x));
+      const label = off ? `Turn Shield on for ${site}` : mode === "gentle" ? `${site}: gentle (bank / gov)` : `Turn Shield off for ${site}`;
+      row.querySelector("span:last-child").textContent = label;
+      row.onclick = () => SH.site(page, !off).then((st) => {
+        shield = st;
+        notice(off ? `Shield is on for ${site} (reload the page)` : `Shield is off for ${site} (reload the page)`);
+        buildShield(side);
+      });
+    });
+    const row = item(`Shield for ${site}…`, { keep: true });
+    row.setAttribute("data-site-row", "");
+    rows.push(hr(), row);
+  }
+  rows.push(hr(),
+    head(`${(shield.count || 0).toLocaleString()} blocked domains · updated ${shieldDate(shield.updated)}`),
+    head(`Blocked since start: ${(shield.blocked || 0).toLocaleString()}`),
+    item(shield.updating ? "Updating the lists…" : "Update the lists now", { icon: "reload", keep: true, act: () => {
+      notice("Shield 17: updating the lists…");
+      SH.update().then((st) => {
+        shield = st;
+        notice(st.ok ? `Shield 17: ${(st.count || 0).toLocaleString()} domains` : `Shield 17: ${st.error}`);
+        buildShield(side);
+      });
+    } }),
+  );
+  side.replaceChildren(...rows);
+}
+
+function buildPrefs(island) {
+  const rows = [
+    subItem("Search engine", ENGINES[state.engine][0], buildEngines),
+    subItem("Site theme", (THEME_NAMES.find(([k]) => k === state.theme) || THEME_NAMES[0])[1], buildThemes),
+  ];
+  if (SH) {
+    rows.push(subItem("Shield 17", shield ? (shield.settings.enabled ? "On" : "Off") : "", (side) => { buildShield(side); shieldRefresh(); }));
+  }
+  if (INIT.standalone) {   // its own sound chain: the sample rate is its own too
+    rows.push(subItem("Sample rate", state.rate === "auto" ? "Auto" :
+      (RATE_NAMES.find(([k]) => k === state.rate) || RATE_NAMES[0])[1], buildRates));
+  }
+  rows.push(hr(),
+    item("One tab plays at a time", { on: state.onePlayer, keep: true, act: () => {
+      state.onePlayer = !state.onePlayer;
+      P.send({ ev: "set", key: "web_one_player", value: state.onePlayer });
+    } }),
+    item("Show tabs", { on: state.tabsShown, keep: true, act: () => showTabs(!state.tabsShown) }),
+    item("Open links in a new tab", { on: state.linksNewTab, keep: true, act: () => {
+      state.linksNewTab = !state.linksNewTab;
+      P.send({ ev: "set", key: "web_links_new_tab", value: state.linksNewTab });
+      tabs.forEach(applyLinks);
+    } }),
+    hr(),
+    item("New tab", { icon: "plus", key: "Ctrl+T", act: () => { newTab(); $("address").focus(); } }),
+    item("Downloads", { icon: "save", key: "Ctrl+J", act: () => setTimeout(openDownloads, 30) }),
+    item("Notes and passwords", { icon: "note", key: "Ctrl+Shift+K", act: () => setTimeout(openNotes, 30) }),
+    item("Extensions", { icon: "puzzle", act: () => setTimeout(openExtensions, 30) }),
+  );
+  if (INIT.standalone) {   // on its own the browser has its own Color and background
+    rows.push(hr(), item("Color and background", { icon: "edit", act: () => P.send({ ev: "colors-open" }) }));
+  }
+  island.replaceChildren(...rows);
+}
+for (const [island, build] of [[$("placesIsland"), buildPlaces], [$("prefsIsland"), buildPrefs]]) {
+  island.addEventListener("rebuild", () => build(island));
+}
+$("places").onclick = () => openIslandAt($("placesIsland"), $("places"), "left", buildPlaces);
+$("burger").onclick = () => openIslandAt($("prefsIsland"), $("burger"), "center", buildPrefs);
+document.addEventListener("mousedown", (e) => {
+  if (openIsland && !e.target.closest(".island") && !e.target.closest("#places, #burger")) closeIslands();
+});
+$("shield").addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); closeIslands(); });
+$("shield").addEventListener("contextmenu", (e) => e.preventDefault());
+// ---------------- right click: the browser's own menu ----------------
+// Chromium's own right-click menu never shows; in its place an island opens where the mouse is:
+// in the address field (Cut, Copy, Paste...) and in pages (also links, pictures, the selected
+// text). It looks like the other menus and follows the colors.
+function openIslandAtPoint(island, x, y, build) {
+  closeIslands();
+  build(island);
+  if (!island.childElementCount) return;
+  const root = $("root").getBoundingClientRect();
+  island.style.maxHeight = "";
+  const w = island.offsetWidth;
+  const h = island.offsetHeight;
+  const left = Math.max(8, Math.min(x, root.width - w - 8));
+  const top = y + h + 8 <= root.height ? y : Math.max(8, y - h);  // no room below: it opens upward
+  island.style.left = left + "px";
+  island.style.top = top + "px";
+  island.style.maxHeight = Math.max(120, root.height - top - 8) + "px";
+  island.classList.add("open");
+  motionBlur(island, true);
+  openIsland = island;
+  $("shield").classList.add("on");
+}
+// rows in groups, a thin line between the groups (empty groups are left out)
+function groups(...parts) {
+  const rows = [];
+  for (const part of parts.filter((p) => p && p.length)) {
+    if (rows.length) rows.push(hr());
+    rows.push(...part);
+  }
+  return rows;
+}
+const short = (text, n = 24) => (text.length > n ? text.slice(0, n - 1) + "…" : text);
+function searchUrl(text) {
+  return ENGINES[state.engine][1].replace("{q}", encodeURIComponent(text));
+}
+
+// the address field (and any other field of the browser's own page)
+function openFieldMenu(field, x, y) {
+  const has = field.selectionStart !== field.selectionEnd;
+  const run = (act) => () => { field.focus(); P.ctx({ act }); };
+  openIslandAtPoint($("ctxIsland"), x, y, (island) => island.replaceChildren(...groups(
+    [item("Undo", { icon: "undo", key: "Ctrl+Z", act: run("undo") }),
+      item("Redo", { icon: "redo", key: "Ctrl+Shift+Z", act: run("redo") })],
+    [has ? item("Cut", { icon: "cut", key: "Ctrl+X", act: run("cut") }) : null,
+      has ? item("Copy", { icon: "copy", key: "Ctrl+C", act: run("copy") }) : null,
+      item("Paste", { icon: "paste", key: "Ctrl+V", act: run("paste") }),
+      field.id === "address" ? item("Paste and go", { icon: "forward", act: () => {
+        field.focus();
+        P.ctx({ act: "paste" });
+        setTimeout(() => go(field.value), 60);
+      } }) : null].filter(Boolean),
+    [item("Select all", { icon: "select", key: "Ctrl+A", act: () => { field.focus(); field.select(); } })],
+  )));
+}
+
+// a page (what was under the mouse comes from main.js)
+function openPageMenu(d) {
+  const tab = tabs.find((t) => { try { return t.wv.getWebContentsId() === d.id; } catch (e) { return false; } });
+  if (!tab || tab !== current) return;
+  const view = tab.wv.getBoundingClientRect();
+  const root = $("root").getBoundingClientRect();
+  const f = d.flags || {};
+  const run = (act, extra) => () => { try { tab.wv.focus(); } catch (e) {} P.ctx(Object.assign({ id: d.id, act }, extra)); };
+  const spelling = d.misspelled ? d.suggestions.map((word) => item(word, { icon: "edit", act: run("replace", { word }) })) : [];
+  let rows;
+  if (d.editable) {
+    rows = groups(spelling,
+      [f.canUndo !== false ? item("Undo", { icon: "undo", key: "Ctrl+Z", act: run("undo") }) : null,
+        f.canRedo ? item("Redo", { icon: "redo", key: "Ctrl+Shift+Z", act: run("redo") }) : null].filter(Boolean),
+      [f.canCut ? item("Cut", { icon: "cut", key: "Ctrl+X", act: run("cut") }) : null,
+        f.canCopy ? item("Copy", { icon: "copy", key: "Ctrl+C", act: run("copy") }) : null,
+        f.canPaste !== false ? item("Paste", { icon: "paste", key: "Ctrl+V", act: run("paste") }) : null,
+        f.canPaste !== false ? item("Paste as plain text", { icon: "paste", key: "Ctrl+Shift+V", act: run("pasteAndMatchStyle") }) : null,
+      ].filter(Boolean),
+      [item("Select all", { icon: "select", key: "Ctrl+A", act: run("selectAll") })]);
+  } else {
+    rows = groups(
+      d.text ? [item("Copy", { icon: "copy", key: "Ctrl+C", act: run("copy") }),
+        PL.translate.enabled ? item("Translate", { icon: "translate", act: () => {
+          const at = [view.left - root.left + d.x, view.top - root.top + d.y];
+          setTimeout(() => showTranslation(d.text, at[0], at[1]), 30);
+        } }) : null,
+        item(`Search for “${short(d.text)}”`, { icon: "search", act: () => newTab(searchUrl(d.text), true) })].filter(Boolean) : [],
+      d.link ? [item("Open link in new tab", { icon: "plus", act: () => newTab(d.link, true) }),
+        item("Copy link", { icon: "link", act: run("copy-text", { text: d.link }) })] : [],
+      d.src ? [item("Open image in new tab", { icon: "image", act: () => newTab(d.src, true) }),
+        item("Copy image", { icon: "copy", act: run("copy-image", { x: d.x, y: d.y }) }),
+        item("Copy image address", { icon: "link", act: run("copy-text", { text: d.src }) }),
+        item("Save image", { icon: "save", act: run("save", { url: d.src }) })] : [],
+    );
+    if (!rows.length) {   // empty place in the page
+      rows = groups(
+        [d.back ? item("Back", { icon: "back", key: "Alt+←", act: () => { try { tab.wv.goBack(); } catch (e) {} } }) : null,
+          d.forward ? item("Forward", { icon: "forward", key: "Alt+→", act: () => { try { tab.wv.goForward(); } catch (e) {} } }) : null,
+          item("Reload", { icon: "reload", key: "F5", act: () => { try { tab.wv.reload(); } catch (e) {} } })].filter(Boolean),
+        [item("Select all", { icon: "select", key: "Ctrl+A", act: run("selectAll") }),
+          item("Copy page address", { icon: "link", act: run("copy-text", { text: d.page || urlOf(tab) }) })],
+      );
+    }
+  }
+  openIslandAtPoint($("ctxIsland"), view.left - root.left + d.x, view.top - root.top + d.y,
+    (island) => island.replaceChildren(...rows));
+}
+P.on("ctx", openPageMenu);
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const panel = e.target.closest(".island.notes.open");   // a field of a side panel: its own menu too
+  if (e.target.closest(".tab, #shield") || (e.target.closest(".island") && !panel)) return;   // tabs have their own menu
+  const field = e.target.closest("input:not([type=range]), textarea");
+  if (!field) return;
+  const root = $("root").getBoundingClientRect();
+  ctxOver = panel;   // (kept open while the menu opens…)
+  openFieldMenu(field, e.clientX - root.left, e.clientY - root.top);
+  if (panel) ctxOver = panel;   // (…and when it closes)
+});
+// a click into a page, or another app, closes the menus; but not while a system window of ours is
+// open (choosing a folder for an extension), nor a click into a page shown INSIDE an island (an
+// extension's own window)
+let holdIslands = false;
+window.addEventListener("blur", () => setTimeout(() => {
+  if (holdIslands) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "WEBVIEW" || a.tagName === "SELECT") && a.closest(".island.open")) return;
+  closeIslands();
+}, 0));
+window.addEventListener("resize", closeIslands);
+
+// "Open links in a new tab": a clicked link to ANOTHER site opens in its own tab (inside one site,
+// like a video on YouTube, the tab simply goes on)
+// (done in each page by a small script after it loads)
+// It listens LAST (bubbling, on the window), so a site's own handling comes first: a link the site
+// turns into a menu (Google's apps grid, profile buttons…) prevents the default, and is left alone.
+// Links that are really buttons (role=button, aria-haspopup / aria-expanded) are never taken either.
+const LINKS_JS = `(function () {
+  if (window.__p17links2) return; window.__p17links2 = true;
+  window.addEventListener("click", function (e) {
+    if (!window.__p17newtab || e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a || a.target === "_blank" || !/^https?:/.test(a.href)) return;
+    if (a.getAttribute("role") === "button" || a.hasAttribute("aria-haspopup") || a.hasAttribute("aria-expanded")) return;
+    try { if (new URL(a.href).host === location.host) return; } catch (err) { return; }  /* the same site stays */
+    e.preventDefault(); window.open(a.href, "_blank");
+  }, false);
+})();`;
+function applyLinks(tab) {
+  if (onStart(tab)) return;
+  tab.wv.executeJavaScript(LINKS_JS + `window.__p17newtab = ${state.linksNewTab};`).catch(() => {});
+}
+
+// ---------------- Notebook 17: notes and passwords ----------------
+// One encrypted file shared with the browser inside Player-17; the key is in the system keyring
+// (main process: notebook.js). Everything is saved by itself a moment after a change.
+const NB = { book: null, tab: "notes", view: "list", cur: null, q: "", error: "", saveTimer: 0, loading: false };
+
+function nbSaveSoon() {
+  clearTimeout(NB.saveTimer);
+  NB.saveTimer = setTimeout(async () => {
+    const r = await P.nb.save(NB.book);
+    if (!r.ok) notice("Notebook not saved: " + r.error);
+  }, 400);
+}
+const nbId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const nbDate = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+function nbHost(url) {
+  try { const u = new URL(url); return /^https?:$/.test(u.protocol) ? u.hostname.replace(/^www\./, "") : ""; }
+  catch (e) { return ""; }
+}
+function nbGenerate(n = 18) {
+  const sets = ["abcdefghijkmnopqrstuvwxyz", "ABCDEFGHJKLMNPQRSTUVWXYZ", "23456789", "!#$%&*+-=?@_"];
+  const all = sets.join("");
+  const rnd = (k) => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % k; };
+  const out = sets.map((s) => s[rnd(s.length)]);           // one of each kind
+  while (out.length < n) out.push(all[rnd(all.length)]);
+  for (let i = out.length - 1; i > 0; i--) { const j = rnd(i + 1); [out[i], out[j]] = [out[j], out[i]]; }
+  return out.join("");
+}
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  return e;
+}
+function iconBtn(icon, title, fn) {
+  const b = el("button", "btn", svg(icon));
+  b.title = title;
+  b.onclick = (ev) => { ev.stopPropagation(); fn(); };
+  return b;
+}
+
+/** A tall island along the right side, under the header (Notebook, Downloads). */
+function openRightPanel(panel) {
+  if (openIsland === panel) { closeIslands(); return false; }
+  closeIslands();
+  const root = $("root").getBoundingClientRect();
+  const top = $("header").getBoundingClientRect().bottom + 4;
+  const w = Math.min(380, root.width - 16);
+  panel.style.width = w + "px";
+  panel.style.left = (root.width - w - 8) + "px";
+  panel.style.top = top + "px";
+  panel.style.height = Math.max(240, root.height - top - 10) + "px";
+  panel.style.maxHeight = "";
+  openIsland = panel;
+  $("shield").classList.add("on");
+  panel.classList.add("open");
+  motionBlur(panel, true);
+  return true;
+}
+
+// ---------------- Own plugins: Translator 17 ----------------
+// Settings shared by both browsers (main process: plugins17.js). A selected text: right click →
+// Translate → an island with the translation, right there. A whole page: Google's page
+// translation (it opens as <site>.translate.goog), from a button in the header or on the page.
+var PL = { translate: { enabled: true, from: "auto", to: "ru", pageButton: "header" }, dark: { enabled: false, style: "dark" } };
+var TR_LANGS = [["ru", "Русский"], ["en", "English"], ["uk", "Українська"], ["hy", "Հայերեն"], ["de", "Deutsch"],
+  ["fr", "Français"], ["es", "Español"], ["it", "Italiano"], ["pt", "Português"], ["pl", "Polski"], ["tr", "Türkçe"],
+  ["ka", "ქართული"], ["kk", "Қазақ"], ["be", "Беларуская"], ["zh-CN", "中文"], ["ja", "日本語"], ["ko", "한국어"], ["ar", "العربية"]];
+function trLangName(code) { return (TR_LANGS.find(([c]) => c.toLowerCase() === String(code).toLowerCase()) || [code, String(code).toUpperCase()])[1]; }
+P.pl.get().then((s) => { PL = s; applyPlugins(); }).catch(() => {});
+async function plSet(id, patch) {
+  PL = await P.pl.set(id, patch);
+  applyPlugins();
+}
+function applyPlugins() {
+  const t = PL.translate;
+  $("translate").style.display = t.enabled && t.pageButton === "header" ? "" : "none";
+  updateTranslateButton();
+  tabs.forEach(pageExtras);
+  tabs.forEach(applyDark);
+}
+function isTranslated(url) { return /^https:\/\/[^/]+\.translate\.goog\//.test(url || ""); }
+function originalOf(url) {   // https://example-com.translate.goog/a?_x_tr_sl=… → https://example.com/a
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/\.translate\.goog$/, "").replace(/--/g, "\u0000").replace(/-/g, ".").replace(/\u0000/g, "-");
+    for (const k of [...u.searchParams.keys()]) if (k.startsWith("_x_tr_")) u.searchParams.delete(k);
+    return "https://" + host + u.pathname + (u.searchParams.toString() ? "?" + u.searchParams : "") + u.hash;
+  } catch (e) { return url; }
+}
+function translatePage(tab) {
+  if (!tab) return;
+  const url = urlOf(tab);
+  if (isTranslated(url)) { navigateTab(tab, originalOf(url)); return; }
+  if (!/^https?:/.test(url)) { notice("Open a site first: this page can't be translated"); return; }
+  // Google doesn't let its own sites through its page translation (YouTube, Google: a "not a robot"
+  // check instead): the selected text still translates
+  if (/^https?:\/\/([^/]+\.)?(youtube\.com|youtu\.be|google\.[a-z.]+|gmail\.com|blogger\.com)(\/|$)/i.test(url)) {
+    notice("Google doesn't translate its own sites (YouTube, Google) as a whole page. Select a text → right click → Translate");
+    return;
+  }
+  navigateTab(tab, `https://translate.google.com/translate?sl=${encodeURIComponent(PL.translate.from || "auto")}&tl=${encodeURIComponent(PL.translate.to)}&hl=${encodeURIComponent(PL.translate.to)}&u=${encodeURIComponent(url)}`);
+}
+function navigateTab(tab, url) {
+  try { tab.wv.loadURL(url).catch(() => {}); } catch (e) { tab.wv.setAttribute("src", url); }
+}
+function updateTranslateButton() {
+  const b = $("translate");
+  if (!PL || !b) return;
+  const done = current && isTranslated(urlOf(current));
+  b.title = done ? "Show the original page" : "Translate this page into " + trLangName(PL.translate.to);
+  b.classList.toggle("on", !!done);
+}
+$("translate").onclick = () => translatePage(current);
+
+// Dark 17: our own dark look for light sites, a style in the page (switching it needs no restart).
+// A site that is already dark is left alone; pictures and videos are turned back to their own colours
+// (a little dimmed), and so are the buttons the browser itself puts on pages.
+// Two looks: "dark" (deep grey, pictures a little dimmed) and "black" (pure black for AMOLED screens,
+// pictures exactly as they are)
+const DARK_CSS = (black) => `html { filter: invert(${black ? 1 : 0.88}) hue-rotate(180deg) !important; background: #fff !important; } ` +
+  "img, video, canvas, iframe, embed, object, #__b17tr, #__b17add { filter: invert(1) hue-rotate(180deg) !important; }";
+function applyDark(tab) {
+  if (!tab || tab.lazy || !/^https?:/.test(urlOf(tab))) return;
+  const on = !!(PL.dark && PL.dark.enabled);
+  const css = DARK_CSS(PL.dark && PL.dark.style === "black");
+  tab.wv.executeJavaScript(`(() => {
+    const ID = "__b17dark";
+    window.__b17darkOn = ${on};
+    const old = document.getElementById(ID);
+    if (!${on}) { if (old) old.remove(); return; }
+    if (old) { old.textContent = ${JSON.stringify(css)}; return; }   // (the other look: changed in place)
+    // how light a colour is (null: see-through)
+    const lum = (c) => { const m = String(c).match(/[\\d.]+/g);
+      if (!m || m.length < 3 || (m.length > 3 && +m[3] < 0.5)) return null;
+      return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255; };
+    const bgAt = (e) => { for (; e; e = e.parentElement) { const l = lum(getComputedStyle(e).backgroundColor); if (l !== null) return l; } return 1; };
+    const check = () => {
+      if (!window.__b17darkOn || document.getElementById(ID) || !document.documentElement) return;
+      const root = bgAt(document.body || document.documentElement);
+      const mid = bgAt(document.elementFromPoint(innerWidth / 2, innerHeight / 2));
+      const text = document.body ? lum(getComputedStyle(document.body).color) : null;
+      if (root < 0.45 || mid < 0.45 || (text !== null && text > 0.6)) return;   // already dark
+      const st = document.createElement("style");
+      st.id = ID;
+      st.textContent = ${JSON.stringify(css)};
+      (document.head || document.documentElement).append(st);
+    };
+    check();
+    if (document.readyState !== "complete") addEventListener("load", () => setTimeout(check, 300), { once: true });
+  })()`).catch(() => {});
+}
+
+// things a page gets from the browser: the store's button, the on-page "Translate" button
+// Google's own bar over a translated page (and its "original text" pop-up): our header button
+// (or the on-page one) already switches back to the original
+const GOOG_BAR_CSS = "#gt-nvframe, #goog-gt-tt, .skiptranslate > iframe { display: none !important; } " +
+  "body { margin-top: 0 !important; top: 0 !important; }";
+function pageExtras(tab) {
+  storeButton(tab);
+  if (isTranslated(urlOf(tab))) tab.wv.insertCSS(GOOG_BAR_CSS).catch(() => {});
+  if (tab === current) updateTranslateButton();
+  const t = PL.translate;
+  const url = urlOf(tab);
+  const want = t.enabled && t.pageButton === "page" && /^https?:/.test(url) && !STORE_PAGE.test(url);
+  if (!want && !tab.trBtn) return;
+  tab.trBtn = want;
+  const css = getComputedStyle(document.documentElement);
+  const solid = (v) => /^#[0-9a-f]{8}$/i.test(v) ? v.slice(0, 7) : v;
+  const look = { bg: solid(css.getPropertyValue("--bg").trim() || "#000"), text: solid(css.getPropertyValue("--title").trim() || "#fff"),
+    line: solid(css.getPropertyValue("--lines").trim() || "#ff0080"),
+    label: isTranslated(url) ? "Original" : "Translate · " + String(t.to).toUpperCase() };
+  tab.wv.executeJavaScript(`(() => {
+    let b = document.getElementById("__b17tr");
+    if (!${want}) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement("div");
+      b.id = "__b17tr";
+      b.setAttribute("role", "button");
+      b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); location.assign("https://player17.local/translate-page"); }, true);
+      document.documentElement.append(b);
+    }
+    const L = ${JSON.stringify(look)};
+    b.textContent = L.label;
+    b.style.cssText = "position:fixed;left:16px;bottom:16px;z-index:2147483647;padding:7px 14px;border-radius:18px;" +
+      "font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.85;background:" + L.bg + ";color:" + L.text +
+      ";border:1.5px solid " + L.line + ";box-shadow:0 0 10px " + L.line + "66";
+  })()`).catch(() => {});
+}
+
+// the translation of a selected text, in an island where it was selected
+async function showTranslation(text, x, y, to) {
+  const lang = to || PL.translate.to;
+  const island = $("trIsland");
+  const build = (body, from) => {
+    const bar = el("div", "bar");
+    bar.append(el("div", "name", "Translator 17"));
+    const sel = el("select");
+    for (const [c, n] of TR_LANGS) sel.append(Object.assign(document.createElement("option"), { value: c, textContent: n, selected: c === lang }));
+    sel.onchange = () => { plSet("translate", { to: sel.value }); showTranslation(text, x, y, sel.value); };
+    bar.append(sel);
+    const out = el("div", "out");
+    out.textContent = body;
+    const foot = el("div", "foot");
+    foot.append(el("div", "from", from ? esc(trLangName(from) + " → " + trLangName(lang)) : ""));
+    const copy = el("button", "", "Copy");
+    copy.onclick = () => { P.nb.copy(body, false); notice("Translation copied"); };
+    if (from) foot.append(copy);
+    island.replaceChildren(bar, out, foot);
+  };
+  openIslandAtPoint(island, x, y, () => build("Translating…", ""));
+  const r = await P.pl.translate(text, lang, PL.translate.from || "auto");
+  if (openIsland !== island) return;   // closed meanwhile
+  build(r.ok ? r.text : "Couldn't translate: " + r.error, r.ok ? r.from : "");
+}
+
+// the "Own plugins" tab of Extensions
+// Translator 17's settings: a small island under its gear (over the Extensions panel)
+function openPluginSettings(gear) {
+  const t = PL.translate;
+  const build = (island) => {
+    const bar = el("div", "bar");
+    bar.append(el("div", "name", "Translator 17"));
+    const from = el("select");
+    for (const [c, n] of [["auto", "Detect language"], ...TR_LANGS])
+      from.append(Object.assign(document.createElement("option"), { value: c, textContent: n, selected: c === (t.from || "auto") }));
+    from.onchange = async () => { await plSet("translate", { from: from.value }); extRender(); };
+    const to = el("select");
+    for (const [c, n] of TR_LANGS) to.append(Object.assign(document.createElement("option"), { value: c, textContent: n, selected: c === t.to }));
+    to.onchange = async () => { await plSet("translate", { to: to.value }); extRender(); };
+    const pair = el("div", "pair");
+    pair.append(from, el("span", "", "→"), to);
+    const where = el("div", "seg");
+    for (const [k, name] of [["header", "Header"], ["page", "On the page"], ["off", "No button"]]) {
+      const b = el("button", t.pageButton === k ? "on" : "", esc(name));
+      b.onclick = async () => { await plSet("translate", { pageButton: k }); island.replaceChildren(); build(island); };
+      where.append(b);
+    }
+    island.replaceChildren(bar, el("div", "lab", "Translate"), pair, el("div", "lab", "“Translate this page” button"), where);
+  };
+  const root = $("root").getBoundingClientRect();
+  const g = gear.getBoundingClientRect();
+  ctxOver = $("extPanel");   // the panel stays open under it
+  openIslandAtPoint($("plIsland"), Math.max(8, g.right - root.left - 400), g.bottom - root.top + 6, build);
+  ctxOver = $("extPanel");
+}
+
+// the "Own plugins" tab of Extensions
+function ownPlugins() {
+  const t = PL.translate;
+  const list = el("div", "list");
+  const row = el("div", "row");
+  row.append(el("span", "ico", svg("translate")));
+  row.append(el("div", "txt", `<div class="t1">Translator 17</div><div class="t2">${esc(
+    (t.from && t.from !== "auto" ? trLangName(t.from) : "Detect language") + " → " + trLangName(t.to))}</div>`));
+  const gear = iconBtn("gear", "Languages and the page button", () => openPluginSettings(gear));
+  row.append(gear);
+  const onOff = el("button", "act" + (t.enabled ? " on" : ""), t.enabled ? "On" : "Off");
+  onOff.onclick = async (e) => { e.stopPropagation(); await plSet("translate", { enabled: !t.enabled }); extRender(); };
+  row.append(onOff);
+  list.append(row);
+  // Dark 17: our own dark look for sites without a dark theme (applyDark)
+  const d = PL.dark || { enabled: false };
+  const drow = el("div", "row");
+  drow.append(el("span", "ico", svg("moon")));
+  drow.append(el("div", "txt", `<div class="t1">Dark 17</div><div class="t2">A dark look for sites that have none</div>`));
+  const black = d.style === "black";
+  const look = el("button", "act", black ? "Black" : "Dark");
+  look.title = black ? "Pure black, for AMOLED screens (click: deep grey)" : "Deep grey (click: pure black, for AMOLED screens)";
+  look.onclick = async (e) => { e.stopPropagation(); await plSet("dark", { style: black ? "dark" : "black" }); extRender(); };
+  drow.append(look);
+  const dOnOff = el("button", "act" + (d.enabled ? " on" : ""), d.enabled ? "On" : "Off");
+  dOnOff.onclick = async (e) => { e.stopPropagation(); await plSet("dark", { enabled: !d.enabled }); extRender(); };
+  drow.append(dOnOff);
+  list.append(drow);
+  return [el("div", "hint", "Plugins made for this browser: they work everywhere, in its own look."), list];
+}
+
+// ---------------- Extensions (a trial): Chrome extensions in the pages ----------------
+const EXT = { list: [], busy: false, view: null, tab: "own" };   // tab: "own" (our plugins) or "chrome"   // view: an extension's own window (its popup / options)
+async function openExtensions() {
+  if (!openRightPanel($("extPanel"))) return;
+  EXT.view = null;
+  EXT.list = await P.ext.list();
+  extRender();
+}
+async function extDo(promise, done) {
+  EXT.busy = true; extRender();
+  const r = await promise;
+  EXT.busy = false;
+  EXT.list = r.list || EXT.list;
+  if (!r.ok) notice("Extension: " + r.error);
+  else if (done) notice(done);
+  extRender();
+}
+function extRender() {
+  const panel = $("extPanel");
+  if (EXT.view && EXT.view.url) {   // the extension's own window, inside the island
+    const bar = el("div", "bar");
+    bar.append(iconBtn("back", "Back to the list", () => { EXT.view = null; extRender(); }),
+      el("div", "title", esc(EXT.view.name)));
+    const wv = document.createElement("webview");
+    wv.setAttribute("allowpopups", "");   // (its links and window.open become tabs, as in pages)
+    wv.src = EXT.view.url;
+    // Electron has no chrome.tabs.create / chrome.windows.create: an extension's window uses them to
+    // open its sign-in page and the like. Here they open a tab of the browser (window.open → a tab).
+    wv.addEventListener("dom-ready", () => wv.executeJavaScript(`(() => {
+      const c = window.chrome; if (!c) return;
+      const open = (o, cb) => {
+        const u = o && o.url ? new URL(Array.isArray(o.url) ? o.url[0] : o.url, location.href).href : "";
+        if (u) window.open(u, "_blank");
+        const t = { id: -1, url: u };
+        if (typeof cb === "function") setTimeout(() => cb(t), 0);
+        return Promise.resolve(t);
+      };
+      c.tabs = c.tabs || {}; c.windows = c.windows || {};
+      for (const [o, k] of [[c.tabs, "create"], [c.windows, "create"]]) {
+        try { o[k] = open; } catch (e) {}
+        if (o[k] !== open) try { Object.defineProperty(o, k, { value: open, configurable: true }); } catch (e) {}
+      }
+    })()`).catch(() => {}));
+    panel.replaceChildren(bar, wv);
+    return;
+  }
+  const top = el("div", "top");
+  top.append(el("div", "title", "Extensions"));
+  const tabsSeg = el("div", "seg");
+  for (const [k, name] of [["own", "Own plugins"], ["chrome", "Chrome"]]) {
+    const b = el("button", EXT.tab === k ? "on" : "", esc(name));
+    b.onclick = () => { EXT.tab = k; EXT.view = null; extRender(); };
+    tabsSeg.append(b);
+  }
+  top.append(tabsSeg);
+  if (EXT.tab === "own") { panel.replaceChildren(top, ...ownPlugins()); return; }
+  const fromFolder = el("button", "act", "From folder");
+  fromFolder.title = "An unpacked extension: a folder with manifest.json";
+  fromFolder.onclick = async () => {
+    holdIslands = true;   // the panel waits while the folder is chosen
+    try { await extDo(P.ext.folder(), "Extension added. Reload the page to see it work"); }
+    finally { holdIslands = false; }
+  };
+  const add = el("div", "bar");
+  const link = el("input");
+  link.placeholder = "Chrome Web Store link";
+  link.spellcheck = false;
+  // on an extension's page in the store: its link is already here
+  const here = urlOf(current);
+  if (!link.value && /chromewebstore\.google\.com\/detail\/|chrome\.google\.com\/webstore\/detail\//.test(here)) link.value = here;
+  const go = el("button", "act", EXT.busy ? "…" : "Add");
+  const install = () => { if (link.value.trim()) extDo(P.ext.store(link.value.trim()), "Extension added. Reload the page to see it work"); };
+  go.onclick = install;
+  link.onkeydown = (e) => { if (e.key === "Enter") install(); };
+  add.append(link, go);
+  const store = el("div", "add", svg("puzzle") + "<span>Open Chrome Web Store</span>");
+  store.title = "Find an extension there, open its page, then come back here: its link is filled in";
+  store.onclick = () => { closeIslands(); newTab("https://chromewebstore.google.com/"); notice("Open an extension's page, then ☰ → Extensions → Add"); };
+  const hint = el("div", "hint", "A trial: extensions that change pages mostly work. Ad blockers of the new kind (uBlock Origin Lite) don't.");
+  const list = el("div", "list");
+  for (const x of EXT.list) {
+    const row = el("div", "row");
+    row.append(x.icon ? Object.assign(el("img", "ico"), { src: x.icon }) : el("span", "ico none"));
+    row.append(el("div", "txt", `<div class="t1">${esc(x.name)}</div><div class="t2">${esc(x.error ? "Not loaded: " + x.error
+      : [x.version && "v" + x.version, x.mv === 3 ? "MV3" : "MV2", x.description].filter(Boolean).join(" · "))}</div>`));
+    if (x.enabled && x.popup) row.append(iconBtn("forward", "Open its window", () => { EXT.view = { name: x.name, url: x.popup }; extRender(); }));
+    if (x.enabled && x.options) row.append(iconBtn("gear", "Its settings", () => { EXT.view = { name: x.name, url: x.options }; extRender(); }));
+    const onOff = el("button", "act" + (x.enabled ? " on" : ""), x.enabled ? "On" : "Off");
+    onOff.title = x.enabled ? "Switch off" : "Switch on";
+    onOff.onclick = (e) => { e.stopPropagation(); extDo(P.ext.enable(x.id, !x.enabled), "Reload the page to apply"); };
+    row.append(onOff);
+    const del = iconBtn("trash", "Remove", () => {
+      if (!del.classList.contains("armed")) { del.classList.add("armed"); del.title = "Click again to remove"; notice("Click the bin again to remove " + x.name); return; }
+      extDo(P.ext.remove(x.id), "Removed: " + x.name);
+    });
+    row.append(del);
+    list.append(row);
+  }
+  if (!EXT.list.length) list.append(el("div", "empty", "No extensions yet. Paste a Chrome Web Store link above."));
+  const chromeTop = el("div", "bar");
+  chromeTop.append(el("div", "grow"), fromFolder);
+  panel.replaceChildren(top, chromeTop, add, store, hint, list);
+}
+
+// On an extension's page in the Chrome Web Store (which hides its own button outside Chrome):
+// our "Add to Browser-17" button. It opens https://player17.local/ext-install?url=…, which the
+// main process hands to this page (the "local" links) instead of loading it.
+const STORE_PAGE = /^https:\/\/(chromewebstore\.google\.com\/detail\/|chrome\.google\.com\/webstore\/detail\/)/;
+function storeButton(tab) {
+  const url = urlOf(tab);
+  const css = getComputedStyle(document.documentElement);
+  const c = (n, d) => (css.getPropertyValue(n).trim() || d);
+  const solid = (v) => /^#[0-9a-f]{8}$/i.test(v) ? v.slice(0, 7) : /^#[0-9a-f]{4}$/i.test(v) ? v.slice(0, 4) : v;   // no see-through
+  const look = { bg: solid(c("--bg", "#000")), text: solid(c("--title", "#fff")), line: solid(c("--lines", "#ff0080")),
+    label: (INIT.standalone ? "Add to Browser-17" : "Add to Player-17 browser") };
+  const js = `(() => {
+    const on = ${JSON.stringify(STORE_PAGE.source)};
+    let b = document.getElementById("__b17add");
+    if (!new RegExp(on).test(location.href)) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement("div");   // (not a link: "open links in a new tab" would take it)
+      b.id = "__b17add";
+      b.setAttribute("role", "button");
+      b.addEventListener("click", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        location.assign("https://player17.local/ext-install?url=" + encodeURIComponent(location.href));
+      }, true);
+      document.documentElement.append(b);
+    }
+    const L = ${JSON.stringify(look)};
+    b.textContent = "+  " + L.label;
+    b.style.cssText = "position:fixed;right:24px;bottom:24px;z-index:2147483647;padding:12px 22px;border-radius:24px;" +
+      "font:600 16px system-ui,sans-serif;text-decoration:none;cursor:pointer;background:" + L.bg + ";color:" + L.text +
+      ";border:2px solid " + L.line + ";box-shadow:0 0 14px " + L.line + "88";
+  })()`;
+  if (STORE_PAGE.test(url) || tab.storeBtn) {
+    tab.storeBtn = STORE_PAGE.test(url);
+    tab.wv.executeJavaScript(js).catch(() => {});
+  }
+}
+
+// ---------------- Downloads: what was downloaded, where it is ----------------
+const DL = { list: [] };
+const dlSize = (b) => !b ? "" : b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + " KB"
+  : b < 1024 ** 3 ? (b / 1024 / 1024).toFixed(1) + " MB" : (b / 1024 ** 3).toFixed(2) + " GB";
+async function openDownloads() {
+  if (!openRightPanel($("dlPanel"))) return;
+  DL.list = await P.dl.list();
+  dlRender();
+}
+P.on("downloads", (list) => { DL.list = list || []; if (openIsland === $("dlPanel")) dlRender(); });
+function dlRender() {
+  const top = el("div", "top");
+  top.append(el("div", "title", "Downloads"));
+  const folder = el("button", "act", "Open folder");
+  folder.onclick = () => P.win({ action: "downloads" });
+  top.append(folder);
+  if (DL.list.some((d) => d.state !== "progressing" && d.state !== "paused")) {
+    const clear = el("button", "act", "Clear list");
+    clear.title = "Only the list: the files stay";
+    clear.onclick = () => P.dl.act("clear");
+    top.append(clear);
+  }
+  const list = el("div", "list");
+  for (const d of DL.list) {
+    const going = d.state === "progressing" || d.state === "paused";
+    const pct = d.total ? Math.floor(d.received * 100 / d.total) : 0;
+    const sub = going ? (d.state === "paused" ? "Paused · " : "") + (d.total ? pct + "% · " + dlSize(d.received) + " of " + dlSize(d.total) : dlSize(d.received))
+      : d.state === "completed" ? [dlSize(d.total || d.received), nbDate(d.t)].filter(Boolean).join(" · ")
+      : d.state === "cancelled" ? "Cancelled" : "Failed";
+    const row = el("div", "row" + (d.state === "completed" ? " done" : "") + (going || d.state === "completed" ? "" : " off"));
+    const txt = el("div", "txt", `<div class="t1">${esc(d.name)}</div><div class="t2">${esc(sub)}</div>`);
+    if (going) txt.append(el("div", "prog", `<i style="width:${pct}%"></i>`));
+    row.append(txt);
+    if (going) {
+      row.append(d.state === "paused" ? iconBtn("play", "Go on", () => P.dl.act("resume", d.id))
+        : iconBtn("pause", "Pause", () => P.dl.act("pause", d.id)),
+        iconBtn("close", "Cancel", () => P.dl.act("cancel", d.id)));
+    } else {
+      row.append(iconBtn("folder", "Show in folder", () => P.dl.act("show", d.id)),
+        iconBtn("close", "Remove from the list (the file stays)", () => P.dl.act("remove", d.id)));
+    }
+    if (d.state === "completed") { row.title = "Open"; row.onclick = () => P.dl.act("open", d.id); }
+    list.append(row);
+  }
+  if (!DL.list.length) list.append(el("div", "empty", "Nothing downloaded yet"));
+  $("dlPanel").replaceChildren(top, list);
+}
+
+async function openNotes() {
+  const panel = $("notesPanel");
+  if (!openRightPanel(panel)) return;
+  if (!NB.book && !NB.loading) {
+    NB.loading = true;
+    NB.error = "";
+    nbRender();
+    const r = await P.nb.load();
+    NB.loading = false;
+    if (r.ok) NB.book = r.book; else NB.error = r.error;
+  }
+  nbRender();
+}
+
+function nbRender() {
+  const panel = $("notesPanel");
+  const top = el("div", "top");
+  top.append(el("div", "title", "Notebook"));
+  const seg = el("div", "seg");
+  for (const [k, name] of [["notes", "Notes"], ["logins", "Passwords"]]) {
+    const b = el("button", NB.tab === k ? "on" : "", esc(name));
+    b.onclick = () => { NB.tab = k; NB.view = "list"; NB.cur = null; NB.q = ""; nbRender(); };
+    seg.append(b);
+  }
+  top.append(seg);
+  const parts = [top];
+  if (NB.loading) parts.push(el("div", "msg", "Opening… (the system keyring may ask to unlock)"));
+  else if (!NB.book && NB.error === "wrong-key") {
+    const again = el("button", "act", "Start a new notebook");
+    again.onclick = async () => {
+      const r = await P.nb.reset();
+      if (r.ok) { NB.book = r.book; NB.error = ""; notice("A new notebook. The old file is kept aside in notebook-17"); }
+      nbRender();
+    };
+    parts.push(el("div", "msg err", "This notebook was saved with another key and can't be opened here."),
+      el("div", "msg", "Start a new one: the old file is not deleted, it stays next to it (notebook.enc.unreadable-…)."),
+      el("div", "bar", "").appendChild(again).parentNode);
+  } else if (!NB.book) parts.push(el("div", "msg err", esc("Can't open the notebook: " + NB.error)),
+    el("div", "msg", "It needs the system keyring (GNOME Keyring or KWallet)."));
+  else if (NB.tab === "notes") parts.push(...(NB.view === "edit" ? nbNoteEdit() : nbNoteList()));
+  else parts.push(...(NB.view === "edit" ? nbLoginEdit() : nbLoginList()));
+  panel.replaceChildren(...parts);
+}
+
+function nbSearch(placeholder) {
+  const q = el("input");
+  q.placeholder = placeholder;
+  q.value = NB.q;
+  q.spellcheck = false;
+  q.oninput = () => { NB.q = q.value; const pos = q.selectionStart; nbRender();
+    const n = $("notesPanel").querySelector("input"); n.focus(); n.setSelectionRange(pos, pos); };
+  return q;
+}
+
+function nbNoteList() {
+  const add = el("div", "add", svg("plus") + "<span>New note</span>");
+  add.onclick = () => {
+    const n = { id: nbId(), text: "", t: Date.now() };
+    NB.book.notes.unshift(n);
+    NB.cur = n.id; NB.view = "edit"; nbRender();
+  };
+  const list = el("div", "list");
+  const q = NB.q.trim().toLowerCase();
+  const notes = NB.book.notes.filter((n) => !q || n.text.toLowerCase().includes(q)).sort((a, b) => b.t - a.t);
+  for (const n of notes) {
+    const lines = n.text.trim().split("\n");
+    const row = el("div", "row", `<div class="txt"><div class="t1">${esc(lines[0] || "Empty note")}</div>` +
+      `<div class="t2">${esc(nbDate(n.t) + (lines[1] ? " · " + lines[1] : ""))}</div></div>`);
+    row.onclick = () => { NB.cur = n.id; NB.view = "edit"; nbRender(); };
+    list.append(row);
+  }
+  if (!notes.length) list.append(el("div", "empty", q ? "Nothing found" : "No notes yet"));
+  return [nbSearch("Search notes"), add, list];
+}
+
+function nbNoteEdit() {
+  const n = NB.book.notes.find((x) => x.id === NB.cur);
+  if (!n) { NB.view = "list"; return nbNoteList(); }
+  const bar = el("div", "bar");
+  bar.append(iconBtn("back", "Back to the list", () => nbLeaveNote(n)), el("div", "grow"));
+  const del = el("button", "act", "Delete");
+  del.onclick = () => {
+    if (!del.classList.contains("warn")) { del.classList.add("warn"); del.textContent = "Delete for good?"; return; }
+    NB.book.notes = NB.book.notes.filter((x) => x !== n);
+    nbSaveSoon(); NB.view = "list"; nbRender();
+  };
+  bar.append(del);
+  const ta = el("textarea");
+  ta.placeholder = "Write here. The first line is the title.";
+  ta.value = n.text;
+  ta.oninput = () => { n.text = ta.value; n.t = Date.now(); nbSaveSoon(); };
+  setTimeout(() => ta.focus(), 50);
+  return [bar, ta];
+}
+function nbLeaveNote(n) {
+  if (!n.text.trim()) { NB.book.notes = NB.book.notes.filter((x) => x !== n); nbSaveSoon(); }   // an empty note is not kept
+  NB.view = "list"; NB.cur = null; nbRender();
+}
+
+function nbLoginList() {
+  const add = el("div", "add", svg("plus") + "<span>Add a password</span>");
+  add.onclick = () => {
+    const l = { id: nbId(), site: nbHost(urlOf(current)), user: "", pass: "", note: "", t: Date.now(), fresh: true };
+    NB.cur = l; NB.view = "edit"; nbRender();
+  };
+  const list = el("div", "list");
+  const q = NB.q.trim().toLowerCase();
+  const here = nbHost(urlOf(current));
+  const logins = NB.book.logins.filter((l) => !q || (l.site + " " + l.user + " " + l.note).toLowerCase().includes(q))
+    .sort((a, b) => (b.site === here) - (a.site === here) || a.site.localeCompare(b.site));
+  for (const l of logins) {
+    const row = el("div", "row", `<div class="txt"><div class="t1">${esc(l.site || "—")}${l.site && l.site === here ? " ·  this site" : ""}</div>` +
+      `<div class="t2">${esc(l.user || "")}</div></div>`);
+    row.append(iconBtn("user", "Copy the login", () => { P.nb.copy(l.user, false); notice("Login copied"); }),
+      iconBtn("key", "Copy the password (cleared in 30 s)", () => { P.nb.copy(l.pass, true); notice("Password copied: it leaves the clipboard in 30 s"); }));
+    row.onclick = () => { NB.cur = l; NB.view = "edit"; nbRender(); };
+    list.append(row);
+  }
+  if (!logins.length) list.append(el("div", "empty", q ? "Nothing found" : "No passwords yet"));
+  return [nbSearch("Search sites and logins"), add, list];
+}
+
+function nbLoginEdit() {
+  const l = NB.cur;
+  if (!l) { NB.view = "list"; return nbLoginList(); }
+  const d = { site: l.site, user: l.user, pass: l.pass, note: l.note };   // edited copy: saved on "Save"
+  const bar = el("div", "bar");
+  bar.append(iconBtn("back", "Back (not saved)", () => { NB.view = "list"; NB.cur = null; nbRender(); }), el("div", "grow"));
+  if (!l.fresh) {
+    const del = el("button", "act", "Delete");
+    del.onclick = () => {
+      if (!del.classList.contains("warn")) { del.classList.add("warn"); del.textContent = "Delete for good?"; return; }
+      NB.book.logins = NB.book.logins.filter((x) => x !== l);
+      nbSaveSoon(); NB.view = "list"; NB.cur = null; nbRender();
+    };
+    bar.append(del);
+  }
+  const ok = el("button", "act", "Save");
+  ok.style.borderColor = "var(--lines)";
+  ok.onclick = () => {
+    if (!d.site.trim() && !d.user.trim() && !d.pass) { notice("Nothing to save"); return; }
+    Object.assign(l, { site: d.site.trim(), user: d.user.trim(), pass: d.pass, note: d.note, t: Date.now() });
+    if (l.fresh) { delete l.fresh; NB.book.logins.push(l); }
+    nbSaveSoon(); NB.view = "list"; NB.cur = null; nbRender(); notice("Saved");
+  };
+  bar.append(ok);
+  const field = (label, key, attrs = {}) => {
+    const i = el("input");
+    Object.assign(i, { value: d[key], spellcheck: false }, attrs);
+    i.oninput = () => { d[key] = i.value; };
+    return [el("div", "lab", esc(label)), i];
+  };
+  const [ls, site] = field("Site", "site", { placeholder: "example.com" });
+  const [lu, user] = field("Login", "user", { placeholder: "name or e-mail", autocomplete: "off" });
+  const [lp, pass] = field("Password", "pass", { type: "password", autocomplete: "new-password" });
+  const pw = el("div", "pw");
+  pw.append(pass,
+    iconBtn("eye", "Show / hide", () => { pass.type = pass.type === "password" ? "text" : "password"; }),
+    iconBtn("dice", "Make a strong password", () => { d.pass = pass.value = nbGenerate(); pass.type = "text"; }),
+    iconBtn("copy", "Copy the password (cleared in 30 s)", () => { P.nb.copy(pass.value, true); notice("Password copied: it leaves the clipboard in 30 s"); }));
+  const note = el("textarea");
+  note.placeholder = "Note (optional)";
+  note.value = d.note;
+  note.style.minHeight = "80px";
+  note.oninput = () => { d.note = note.value; };
+  const form = el("div", "form");
+  form.append(ls, site, lu, user, lp, pw, note);
+  setTimeout(() => (l.fresh && site.value ? user : site).focus(), 50);
+  return [bar, form];
+}
+
+// ---------------- messages ----------------
+let toastMark = 0;
+function notice(text, onClick) {
+  const toast = $("toast");
+  const mark = ++toastMark;
+  if (!text) { toast.classList.remove("on"); return; }
+  toast.textContent = text;
+  toast.classList.toggle("link", !!onClick);
+  toast.onclick = onClick || null;
+  if (!toast.classList.contains("on")) motionBlur(toast, true);
+  toast.classList.add("on");
+  setTimeout(() => { if (toastMark === mark) toast.classList.remove("on"); }, onClick ? 5000 : 3000);
+}
+
+// ---------------- shortcuts (also while a page has the keyboard: they come from the main process) ----------------
+const SHORTCUTS = {
+  "Ctrl+t": () => { newTab(); $("address").focus(); },
+  "Ctrl+Shift+k": () => openNotes(),
+  "Ctrl+w": () => closeTab(current),
+  "Ctrl+l": () => { $("address").focus(); $("address").select(); },
+  "Ctrl+r": () => $("reload").click(),
+  "F5": () => $("reload").click(),
+  "Alt+ArrowLeft": () => $("back").click(),
+  "Alt+ArrowRight": () => $("forward").click(),
+  "Ctrl+Tab": () => stepTab(1), "Ctrl+PageDown": () => stepTab(1),
+  "Ctrl+Shift+Tab": () => stepTab(-1), "Ctrl+PageUp": () => stepTab(-1),
+  "Ctrl+j": () => openDownloads(),
+};
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeIslands(); return; }
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const combo = (e.ctrlKey || e.metaKey ? "Ctrl+" : "") + (e.altKey ? "Alt+" : "") + (e.shiftKey ? "Shift+" : "") + key;
+  if (SHORTCUTS[combo]) { e.preventDefault(); SHORTCUTS[combo](); }
+});
+P.on("key", (combo) => { if (SHORTCUTS[combo]) SHORTCUTS[combo](); });
+// the browser's own addresses (https://player17.local/...) are commands, never pages: also when a
+// site's link would open them in a new tab
+P.on("open-tab", (url) => String(url).startsWith("https://player17.local/") ? handleLocal(url) : newTab(url, true));
+P.on("maxed", (on) => document.documentElement.classList.toggle("maxed", !!on));
+P.on("local", (url) => handleLocal(url));
+function handleLocal(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return; }
+  const q = u.searchParams;
+  if (u.pathname === "/unpin") {  // (older start pages still open in a tab)
+    const target = q.get("url");
+    state.pinned = state.pinned.filter((p) => p.url !== target);
+    saveStartLists("own");
+  } else if (u.pathname === "/save" || u.pathname === "/remove") {
+    // a tile of the start page: added, edited or removed
+    const own = q.get("list") !== "music";
+    const list = own ? state.pinned : state.sites;
+    const i = parseInt(q.get("i"), 10);
+    if (u.pathname === "/remove") {
+      if (i >= 0 && i < list.length) list.splice(i, 1);
+    } else {
+      let url;
+      try { url = new URL(q.get("url") || ""); } catch (e) { return; }
+      if (!/^https?:$/.test(url.protocol)) return;
+      const entry = { title: (q.get("title") || "").trim() || url.hostname.replace(/^www[.]/, ""), url: url.href.replace(/[/]$/, "") };
+      if (i >= 0 && i < list.length) list[i] = entry;
+      else list.push(entry);
+    }
+    saveStartLists(own ? "own" : "music");
+  } else if (u.pathname === "/translate-page") {   // the button on a page (Translator 17)
+    translatePage(current);
+  } else if (u.pathname === "/ext-install") {   // the button on a Chrome Web Store page
+    const target = q.get("url") || "";
+    notice("Adding the extension…");
+    P.ext.store(target).then((r) => {
+      const x = r.ok ? (r.list || []).find((e) => e.id === r.id) : null;
+      notice(r.ok ? `Added: ${x ? x.name : "the extension"}. Reload a page to see it work` : "Extension: " + r.error);
+      if (openIsland === $("extPanel")) { EXT.list = r.list || EXT.list; extRender(); }
+    });
+  } else if (u.pathname === "/restore") {
+    state.sites = DEFAULT_SITES.map((p) => ({ ...p }));
+    state.sitesChanged = false;
+    P.send({ ev: "set", key: "web_sites", value: null });
+    refreshStartPages();
+  }
+}
+function saveStartLists(which) {
+  if (which === "own") {
+    P.send({ ev: "set", key: "web_pinned", value: state.pinned });
+    showAddress();  // the star follows
+  } else {
+    state.sitesChanged = true;
+    P.send({ ev: "set", key: "web_sites", value: state.sites });
+  }
+  refreshStartPages();
+}
+P.on("download", (d) => {
+  if (d.state === "started") notice(`Downloading: ${d.name}`);
+  else if (d.state === "completed") notice(`Saved: ${d.name}  (click: show in folder)`, () => P.win({ action: "show-file", file: d.file }));
+  else notice(`Download failed: ${d.name}`);
+});
+// the player's commands: pause / play scripts, messages, colors
+let colorsTimer = 0;
+P.on("cmd", (cmd) => {
+  if (cmd.cmd === "colors") {  // Color and background in the player: shown here at once
+    setColors(cmd.colors);
+    if (cmd.frame !== undefined) document.documentElement.classList.toggle("framed", !!cmd.frame);
+    clearTimeout(colorsTimer);
+    colorsTimer = 0;  // (the start page follows the colors by itself)
+  } else if (cmd.cmd === "restart") {  // solid <-> see-through: the window is made again
+    P.send({ ev: "restart", tabs: tabs.filter((t) => !t.pinned && !onStart(t)).map(urlOf).filter(Boolean) });
+  } else if (cmd.cmd === "js") {
+    for (const tab of tabs) tab.wv.executeJavaScript(cmd.script || "").catch(() => {});
+  } else if (cmd.cmd === "notice") {
+    notice(cmd.text || "");
+  } else if (cmd.cmd === "rate") {   // the sample rate was chosen in the Plugins window
+    state.rate = String(cmd.value || "auto");
+  } else if (cmd.cmd === "sound") {   // Browser-17 on its own: the sound helper's state
+    onSoundStatus(!!cmd.ok, cmd.text || "");
+  }
+});
+
+// the links script goes into every page once it is ready (and Dark 17's look)
+$("views").addEventListener("dom-ready", (e) => {
+  const tab = tabs.find((t) => t.wv === e.target);
+  if (tab) { applyLinks(tab); applyDark(tab); }
+}, true);
+
+// ---------------- start ----------------
+setColors(C);
+renderStart();
+showTabs(state.tabsShown, false);
+const pinnedAtStart = (INIT.pinned_tabs || []).filter((u) => typeof u === "string" && u);
+const reopen = (INIT.open_tabs || []).filter((u) => u && !pinnedAtStart.includes(u));
+// tabs brought back sleep until opened (no sound, no load); only the last one is shown and loads now
+for (const url of pinnedAtStart) newTab(url, false, true, true);
+if (reopen.length) reopen.forEach((url, i) => newTab(url, i === reopen.length - 1, false, i < reopen.length - 1));
+else newTab();
+</script>
+<script src="standalone-ui.js"></script>
+</body>
+</html>
